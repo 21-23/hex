@@ -9,9 +9,11 @@ import qualified Data.Map.Strict as Map
 import Docker.Client (BuildOpts, ContainerConfig, defaultBuildOpts, defaultContainerConfig, buildDockerfileName)
 import Data.Aeson (FromJSON(parseJSON), (.:), Value(Object))
 import Control.Monad (mzero)
+import Data.Semigroup ((<>))
 
 data ServiceDefinition = ServiceDefinition
   { name            :: Text
+  , buildContext    :: Text
   , buildOptions    :: BuildOpts
   , containerConfig :: ContainerConfig
   }
@@ -19,10 +21,11 @@ data ServiceDefinition = ServiceDefinition
 instance FromJSON ServiceDefinition where
   parseJSON (Object definition) = do
     name <- definition .: "name"
-    dockerFileName <- definition .: "dockerFile"
-    let buildOpts = defaultBuildOpts name
+    buildContext <- definition .: "context"
+    let buildOpts = defaultBuildOpts $ "hex_" <> name
     return $ ServiceDefinition name
-                               buildOpts { buildDockerfileName = dockerFileName }
+                               buildContext
+                               buildOpts
                                (defaultContainerConfig name)
   parseJSON _ = mzero
 

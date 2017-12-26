@@ -8,6 +8,7 @@ import qualified Data.Map.Strict as Map
 import Data.Monoid ((<>))
 import System.Directory (makeAbsolute)
 import Control.Monad.IO.Class (liftIO)
+import qualified Data.Text as Text
 
 import HexFile (HexFile(HexFile), ServiceDefinition(ServiceDefinition))
 
@@ -17,14 +18,17 @@ main = do
   case maybeHexFile of
     Just (HexFile services entry) -> do
       httpHandler <- Docker.defaultHttpHandler
-      result <- Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $
+      Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
         case Map.lookup entry services of
           Nothing -> fail $ "Entry service '" <> show entry <> "' is not defined"
-          Just (ServiceDefinition _ buildOptions _) -> do
-            basePath <- liftIO $ makeAbsolute "."
-            Docker.buildImageFromDockerfile buildOptions basePath
-      case result of
-        Right _ -> putStrLn "Yay!"
-        Left err -> print err
+          Just (ServiceDefinition _ buildContext buildOptions _) -> do
+            basePath <- liftIO $ makeAbsolute $ Text.unpack buildContext
+            result <- Docker.buildImageFromDockerfile buildOptions basePath
+            case result of
+              Right _ -> do
+                images <- Docker.listImages $ Docker.ListOpts True
+                liftIO $ print images
+              Left err -> liftIO $ print err
+
 
     Nothing -> putStrLn "Couldn't read Hexfile"

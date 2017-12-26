@@ -1,18 +1,21 @@
 services:
   -
     name: messenger
-    dockerFile: ../qd-platform/arnaux
+    context: ../qd-platform/arnaux
   -
     name: state-service
-    dockerFile: ../qd-platform/redemption
+    context: ../qd-platform/redemption
   -
     name: front-service
-    dockerFile: ../qd-platform/front-service
+    context: ../qd-platform/front-service
   -
     name: sandbox-service
-    dockerFile: ../qd-platform/zandbak-service
+    context: ../qd-platform/zandbak-service
   -
     name: init-service
-    dockerFile: ../qd-platform/ignition
+    context: ../qd-platform/ignition
+  -
+    name: dummy-service
+    context: ./dummy-service
 
 entry: messenger
