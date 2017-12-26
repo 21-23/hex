@@ -15,6 +15,7 @@ type ServiceName = Text
 
 data ServiceDefinition = ServiceDefinition
   { name            :: ServiceName
+  , imageName       :: Text
   , buildContext    :: Text
   , buildOptions    :: BuildOpts
   , containerConfig :: ContainerConfig
@@ -24,11 +25,13 @@ instance FromJSON ServiceDefinition where
   parseJSON (Object definition) = do
     name <- definition .: "name"
     buildContext <- definition .: "context"
-    let buildOpts = defaultBuildOpts $ "hex_" <> name
+    let hexName   = "hex_" <> name
+        buildOpts = defaultBuildOpts hexName
     return $ ServiceDefinition name
+                               hexName
                                buildContext
                                buildOpts
-                               (defaultContainerConfig name)
+                               (defaultContainerConfig hexName)
   parseJSON _ = mzero
 
 data MessengerDefinition = MessengerDefinition
@@ -44,7 +47,7 @@ instance FromJSON MessengerDefinition where
   parseJSON _ = mzero
 
 data HexFile = HexFile
-  { services  :: Map Text ServiceDefinition
+  { services  :: Map ServiceName ServiceDefinition
   , messenger :: MessengerDefinition
   , entry     :: [ServiceName]
   }
