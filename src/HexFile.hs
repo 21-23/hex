@@ -11,8 +11,10 @@ import Data.Aeson (FromJSON(parseJSON), (.:), Value(Object))
 import Control.Monad (mzero)
 import Data.Semigroup ((<>))
 
+type ServiceName = Text
+
 data ServiceDefinition = ServiceDefinition
-  { name            :: Text
+  { name            :: ServiceName
   , buildContext    :: Text
   , buildOptions    :: BuildOpts
   , containerConfig :: ContainerConfig
@@ -29,16 +31,30 @@ instance FromJSON ServiceDefinition where
                                (defaultContainerConfig name)
   parseJSON _ = mzero
 
+data MessengerDefinition = MessengerDefinition
+  { service :: ServiceName
+  , port    :: Integer
+  }
+
+instance FromJSON MessengerDefinition where
+  parseJSON (Object definition) = do
+    service <- definition .: "service"
+    port <- definition .: "port"
+    return $ MessengerDefinition service port
+  parseJSON _ = mzero
+
 data HexFile = HexFile
-  { services :: Map Text ServiceDefinition
-  , entry    :: Text
+  { services  :: Map Text ServiceDefinition
+  , messenger :: MessengerDefinition
+  , entry     :: [ServiceName]
   }
 
 instance FromJSON HexFile where
   parseJSON (Object hexFile) = do
     serviceList <- hexFile .: "services"
+    messenger <- hexFile .: "messenger"
     entry <- hexFile .: "entry"
     let makeTuples definition@ServiceDefinition{name} = (name, definition)
         services = Map.fromList $ makeTuples <$> serviceList
-    return $ HexFile services entry
+    return $ HexFile services messenger entry
   parseJSON _ = mzero

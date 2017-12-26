@@ -18,4 +18,9 @@ services:
     name: dummy-service
     context: ./dummy-service
 
-entry: messenger
+messenger:
+  service: messenger
+  port: 3002
+
+entry:
+  - dummy-service
