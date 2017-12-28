@@ -26,7 +26,7 @@ main = do
       Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
         case Map.lookup messengerName services of
           Nothing -> fail $ "Messenger service '" <> show messengerName <> "' is not defined"
-          Just (ServiceDefinition name imageName buildContext buildOptions _) -> do
+          Just (ServiceDefinition name imageName buildContext buildOptions createOptions) -> do
             listResult <- Docker.listImages $ Docker.ListOpts True
             case listResult of
               Left err -> fail $ show err
@@ -35,7 +35,7 @@ main = do
                                        (imageName <> ":latest") `elem` imageRepoTags) images
                 case messengerImage of
                   Just _ -> do
-                    createResult <- Docker.createContainer (Docker.defaultCreateOpts imageName) (Just imageName)
+                    createResult <- Docker.createContainer createOptions (Just imageName)
                     case createResult of
                       Left err -> fail $ show err
                       Right containerId ->

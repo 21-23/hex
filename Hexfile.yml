@@ -2,6 +2,8 @@ services:
   -
     name: messenger
     context: ../qd-platform/arnaux
+    ports:
+      - "3002:3000"
   -
     name: state-service
     context: ../qd-platform/redemption
