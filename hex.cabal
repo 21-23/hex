@@ -20,6 +20,9 @@ description:         Please see the README on Github at <https://github.com/gith
 library
   hs-source-dirs:      src
   exposed-modules:     HexFile
+                     , Envelope
+                     , Identity
+                     , Message
   build-depends:       base >= 4.7 && < 5
                      , containers -any
                      , aeson -any
@@ -39,6 +42,11 @@ executable hex-exe
                      , docker -any
                      , directory
                      , text
+                     , network
+                     , websockets
+                     , timers
+                     , suspend
+                     , aeson
   default-language:    Haskell2010
 
 test-suite hex-test

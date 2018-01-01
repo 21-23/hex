@@ -14,7 +14,8 @@ import Docker.Client (BuildOpts, defaultBuildOpts,
                       HostPort(HostPort),
                       ExposedPort(ExposedPort),
                       PortType(TCP),
-                      ContainerConfig, exposedPorts, defaultContainerConfig,
+                      EnvVar(EnvVar),
+                      ContainerConfig, exposedPorts, hostname, env, defaultContainerConfig,
                       buildDockerfileName)
 import Data.Aeson (FromJSON(parseJSON), (.:), (.:?), (.!=), Value(Object, String))
 import Control.Monad (mzero)
@@ -44,6 +45,17 @@ mappingToExposedPort :: PortMapping -> ExposedPort
 mappingToExposedPort (PortMapping _ containerPort) =
   ExposedPort containerPort TCP
 
+data EnvKeyValue = EnvKeyValue Text Text
+
+instance FromJSON EnvKeyValue where
+  parseJSON (String keyValue) = do
+    let [key, value] = splitOn "=" keyValue
+    return $ EnvKeyValue key value
+  parseJSON _ = mzero
+
+envKeyValueToEnvVar :: EnvKeyValue -> EnvVar
+envKeyValueToEnvVar (EnvKeyValue key value) = EnvVar key value
+
 data ServiceDefinition = ServiceDefinition
   { name          :: ServiceName
   , imageName     :: Text
@@ -57,6 +69,8 @@ instance FromJSON ServiceDefinition where
     name <- definition .: "name"
     buildContext <- definition .: "context"
     ports <- definition .:? "ports"
+    envVars <- definition .:? "environment" .!= []
+
     let hexName       = "hex_" <> name
         buildOptions  = defaultBuildOpts hexName
         createOptions = case ports of
@@ -65,7 +79,11 @@ instance FromJSON ServiceDefinition where
                             let portBindings    = mappingToBinding <$> mappings
                                 hostConfig      = defaultHostConfig { portBindings }
                                 exposedPorts    = mappingToExposedPort <$> mappings
-                                containerConfig = (defaultContainerConfig hexName) { exposedPorts }
+                                containerConfig = (defaultContainerConfig hexName)
+                                                    { exposedPorts
+                                                    , hostname = Just name
+                                                    , env = envKeyValueToEnvVar <$> envVars
+                                                    }
                              in CreateOpts containerConfig hostConfig
     return $ ServiceDefinition name
                                hexName
@@ -76,7 +94,7 @@ instance FromJSON ServiceDefinition where
 
 data MessengerDefinition = MessengerDefinition
   { service :: ServiceName
-  , port    :: Integer
+  , port    :: Int
   }
 
 instance FromJSON MessengerDefinition where
