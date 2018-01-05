@@ -26,5 +26,4 @@ messenger:
   service: messenger
   port: 3002
 
-entry:
-  - dummy-service
+entry: init-service

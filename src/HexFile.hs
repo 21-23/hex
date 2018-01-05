@@ -107,7 +107,7 @@ instance FromJSON MessengerDefinition where
 data HexFile = HexFile
   { services  :: Map ServiceName ServiceDefinition
   , messenger :: MessengerDefinition
-  , entry     :: [ServiceName]
+  , entry     :: ServiceName
   }
 
 instance FromJSON HexFile where

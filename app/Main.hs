@@ -16,8 +16,10 @@ import qualified Network.WebSockets as WebSocket
 import           Network.Socket (withSocketsDo)
 import           Control.Exception (IOException, catch)
 import           Control.Concurrent.Suspend.Lifted (msDelay, suspend)
-import           Control.Monad (forever)
+import           Control.Monad (forever, when)
 import qualified Data.Aeson as Aeson
+import qualified Data.Maybe as Maybe
+import           Control.Concurrent (forkIO)
 
 
 import HexFile (HexFile(HexFile),
@@ -34,7 +36,7 @@ app messengerHost messengerPort connection = do
     string <- catch
       (WebSocket.receiveData connection)
       (\exception -> do
-        print (exception :: WebSocket.ConnectionException)
+        putStrLn $ "Error while receiving data" <> show (exception :: WebSocket.ConnectionException)
         suspend $ msDelay 500
         connectToMessenger messengerHost messengerPort $ app messengerHost messengerPort
         return "")
@@ -48,48 +50,61 @@ connectToMessenger messengerHost messengerPort clientApp =
   catch
     (withSocketsDo $ WebSocket.runClient messengerHost messengerPort "/" clientApp)
     (\exception -> do
-      print (exception :: WebSocket.ConnectionException)
+      putStrLn $ "Connection to messenger lost: " <> show (exception :: WebSocket.ConnectionException)
       suspend $ msDelay 500
+      putStrLn "Reconnecting..."
       connectToMessenger messengerHost messengerPort clientApp)
+
+runServiceContainer :: ServiceDefinition -> Docker.DockerT IO (Either Docker.DockerError ())
+runServiceContainer (ServiceDefinition name imageName _ _ createOptions) = do
+  liftIO $ putStrLn $ "Creating " <> Text.unpack name <> "..."
+  createResult <- Docker.createContainer createOptions (Just imageName)
+  case createResult of
+    Left err -> fail $ show err
+    Right containerId -> do
+      liftIO $ putStrLn $ "Starting " <> Text.unpack name <> "..."
+      Docker.startContainer Docker.defaultStartOpts containerId
+
+ensureBuiltImage :: ServiceDefinition -> Docker.DockerT IO ()
+ensureBuiltImage (ServiceDefinition _ imageName buildContext buildOptions _) = do
+  listResult <- Docker.listImages $ Docker.ListOpts True
+  case listResult of
+    Left err -> fail $ show err
+    Right images -> do
+      let maybeImage = List.find (\DockerImage {Docker.imageRepoTags} ->
+                             (imageName <> ":latest") `elem` imageRepoTags) images
+      when (Maybe.isNothing maybeImage) $ do
+        liftIO $ putStrLn $ "Service " <> show imageName <> " is not built, building..."
+        basePath <- liftIO $ makeAbsolute $ Text.unpack buildContext
+        result <- Docker.buildImageFromDockerfile buildOptions basePath
+        case result of
+          Right _ ->
+            -- images <- Docker.listImages $ Docker.ListOpts True
+            -- liftIO $ print images
+            liftIO $ putStrLn "Build successful"
+          Left err -> liftIO $ print err
 
 main :: IO ()
 main = do
   decodedHexFile <- Yaml.decodeFileEither "./Hexfile.yml" :: IO (Either ParseException HexFile)
   case decodedHexFile of
-    Right (HexFile services (MessengerDefinition messengerName messengerPort) entry) -> do
+    Right (HexFile services (MessengerDefinition messengerName messengerPort) entryServiceName) -> do
       httpHandler <- Docker.defaultHttpHandler
-      Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
+      result <- Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
         case Map.lookup messengerName services of
-          Nothing -> fail $ "Messenger service '" <> show messengerName <> "' is not defined"
-          Just (ServiceDefinition name imageName buildContext buildOptions createOptions) -> do
-            listResult <- Docker.listImages $ Docker.ListOpts True
-            case listResult of
-              Left err -> fail $ show err
-              Right images -> do
-                let messengerImage = List.find (\DockerImage {Docker.imageRepoTags} ->
-                                       (imageName <> ":latest") `elem` imageRepoTags) images
-                case messengerImage of
-                  Just _ -> do
-                    createResult <- Docker.createContainer createOptions (Just imageName)
-                    case createResult of
-                      Left err -> fail $ show err
-                      Right containerId -> do
-                        Docker.startContainer Docker.defaultStartOpts containerId
-                        let messengerHost = "localhost"
-                        liftIO $ connectToMessenger messengerHost messengerPort $ app messengerHost messengerPort
-
-                  Nothing -> do
-                    liftIO $ putStrLn $ "Messenger service '" <> show messengerName <> "' is not built"
-                    basePath <- liftIO $ makeAbsolute $ Text.unpack buildContext
-                    result <- Docker.buildImageFromDockerfile buildOptions basePath
-                    case result of
-                      Right _ -> do
-                        images <- Docker.listImages $ Docker.ListOpts True
-                        liftIO $ print images
-                      Left err -> liftIO $ print err
-      return ()
-
-
-
+          Nothing -> fail $ "Messenger service " <> show messengerName <> " is not defined"
+          Just messengerDefinition@(ServiceDefinition name imageName buildContext buildOptions createOptions) -> do
+            ensureBuiltImage messengerDefinition
+            runServiceContainer messengerDefinition
+            let messengerHost = "localhost"
+            liftIO $ forkIO $ connectToMessenger messengerHost messengerPort $ app messengerHost messengerPort
+            case Map.lookup entryServiceName services of
+              Just entryServiceDefinition -> do
+                ensureBuiltImage entryServiceDefinition
+                runServiceContainer entryServiceDefinition
+              Nothing -> fail $ "Entry service " <> show entryServiceName <> " is not defined"
+      case result of
+        Right _  -> putStrLn "Done"
+        Left err -> print err
 
     Left err -> putStrLn $ "Error reading Hexfile: " <> show err
