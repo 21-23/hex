@@ -8,7 +8,8 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Docker.Client (BuildOpts, defaultBuildOpts,
                       CreateOpts(CreateOpts), defaultCreateOpts,
-                      HostConfig, portBindings, defaultHostConfig,
+                      HostConfig, portBindings, networkMode, defaultHostConfig,
+                      NetworkMode(CustomNetwork),
                       Port,
                       PortBinding(PortBinding), containerPort, portType, hostPorts,
                       HostPort(HostPort),
@@ -16,6 +17,7 @@ import Docker.Client (BuildOpts, defaultBuildOpts,
                       PortType(TCP),
                       EnvVar(EnvVar),
                       ContainerConfig, exposedPorts, hostname, env, defaultContainerConfig,
+                      defaultNetworkConfig, aliases,
                       buildDockerfileName)
 import Data.Aeson (FromJSON(parseJSON), (.:), (.:?), (.!=), Value(Object, String))
 import Control.Monad (mzero)
@@ -68,23 +70,24 @@ instance FromJSON ServiceDefinition where
   parseJSON (Object definition) = do
     name <- definition .: "name"
     buildContext <- definition .: "context"
-    ports <- definition .:? "ports"
+    portMappings <- definition .:? "ports" .!= []
     envVars <- definition .:? "environment" .!= []
 
     let hexName       = "hex_" <> name
         buildOptions  = defaultBuildOpts hexName
-        createOptions = case ports of
-                          Nothing       -> defaultCreateOpts hexName
-                          Just mappings ->
-                            let portBindings    = mappingToBinding <$> mappings
-                                hostConfig      = defaultHostConfig { portBindings }
-                                exposedPorts    = mappingToExposedPort <$> mappings
-                                containerConfig = (defaultContainerConfig hexName)
-                                                    { exposedPorts
-                                                    , hostname = Just name
-                                                    , env = envKeyValueToEnvVar <$> envVars
-                                                    }
-                             in CreateOpts containerConfig hostConfig
+        createOptions = let portBindings    = mappingToBinding <$> portMappings
+                            exposedPorts    = mappingToExposedPort <$> portMappings
+                            hostConfig      = defaultHostConfig
+                                                { portBindings
+                                                , networkMode = CustomNetwork "test-network"
+                                                }
+                            containerConfig = (defaultContainerConfig hexName)
+                                                { exposedPorts
+                                                , env = envKeyValueToEnvVar <$> envVars
+                                                }
+                            networkConfig   = defaultNetworkConfig
+                                                { aliases = [name]}
+                         in CreateOpts containerConfig hostConfig (Just networkConfig)
     return $ ServiceDefinition name
                                hexName
                                buildContext
