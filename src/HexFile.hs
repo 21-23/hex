@@ -9,7 +9,7 @@ import qualified Data.Map.Strict as Map
 import Docker.Client (BuildOpts, defaultBuildOpts,
                       CreateOpts(CreateOpts), defaultCreateOpts,
                       HostConfig, portBindings, networkMode, defaultHostConfig,
-                      NetworkMode(CustomNetwork),
+                      NetworkMode(NetworkNamed),
                       Port,
                       PortBinding(PortBinding), containerPort, portType, hostPorts,
                       HostPort(HostPort),
@@ -79,7 +79,7 @@ instance FromJSON ServiceDefinition where
                             exposedPorts    = mappingToExposedPort <$> portMappings
                             hostConfig      = defaultHostConfig
                                                 { portBindings
-                                                , networkMode = CustomNetwork "test-network"
+                                                , networkMode = NetworkNamed "test-network"
                                                 }
                             containerConfig = (defaultContainerConfig hexName)
                                                 { exposedPorts
