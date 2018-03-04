@@ -84,6 +84,24 @@ ensureBuiltImage (ServiceDefinition _ imageName buildContext buildOptions _) = d
             liftIO $ putStrLn "Build successful"
           Left err -> liftIO $ print err
 
+stopAndRemove :: ServiceDefinition -> Docker.DockerT IO ()
+stopAndRemove (ServiceDefinition _ imageName buildContext buildOptions _) = do
+  listResult <- Docker.listContainers $ Docker.ListOpts True
+  case listResult of
+    Left err -> fail $ show err
+    Right containers -> do
+      let maybeContainer = List.find (\Docker.Container {Docker.containerImageName} ->
+                             containerImageName == imageName) containers
+      case maybeContainer of
+        Just Docker.Container {Docker.containerId} -> do
+          liftIO $ putStrLn $ "A container for " <> show imageName <> " already exists, stopping & removing..."
+          Docker.stopContainer Docker.DefaultTimeout containerId
+          result <- Docker.deleteContainer Docker.defaultDeleteOpts containerId
+          case result of
+            Right _  -> liftIO $ putStrLn "Cleaned up successfully"
+            Left err -> liftIO $ print err
+        Nothing -> return ()
+
 main :: IO ()
 main = do
   decodedHexFile <- Yaml.decodeFileEither "./Hexfile.yml" :: IO (Either ParseException HexFile)
@@ -95,12 +113,14 @@ main = do
           Nothing -> fail $ "Messenger service " <> show messengerName <> " is not defined"
           Just messengerDefinition@(ServiceDefinition name imageName buildContext buildOptions createOptions) -> do
             ensureBuiltImage messengerDefinition
+            stopAndRemove messengerDefinition
             runServiceContainer messengerDefinition
             let messengerHost = "localhost"
             liftIO $ forkIO $ connectToMessenger messengerHost messengerPort $ app messengerHost messengerPort
             case Map.lookup entryServiceName services of
               Just entryServiceDefinition -> do
                 ensureBuiltImage entryServiceDefinition
+                stopAndRemove entryServiceDefinition
                 runServiceContainer entryServiceDefinition
               Nothing -> fail $ "Entry service " <> show entryServiceName <> " is not defined"
       case result of
