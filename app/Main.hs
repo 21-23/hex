@@ -19,7 +19,7 @@ import           Control.Concurrent.Suspend.Lifted (msDelay, suspend)
 import           Control.Monad (forever, when)
 import qualified Data.Aeson as Aeson
 import qualified Data.Maybe as Maybe
-import           Control.Concurrent (forkIO)
+import           Control.Concurrent.Async (async, wait)
 
 
 import HexFile (HexFile(HexFile),
@@ -31,7 +31,9 @@ import Identity (Identity(Messenger, MetaService))
 
 app :: String -> Int -> WebSocket.ClientApp ()
 app messengerHost messengerPort connection = do
-  WebSocket.sendTextData connection $ Aeson.encode $ Envelope Messenger (CheckIn MetaService)
+  catch
+    (WebSocket.sendTextData connection $ Aeson.encode $ Envelope Messenger (CheckIn MetaService))
+    (\exception -> putStrLn $ "Whoa " <> show (exception :: WebSocket.ConnectionException))
   forever $ do
     string <- catch
       (WebSocket.receiveData connection)
@@ -48,7 +50,7 @@ app messengerHost messengerPort connection = do
 connectToMessenger :: String -> Int -> WebSocket.ClientApp () -> IO ()
 connectToMessenger messengerHost messengerPort clientApp =
   catch
-    (withSocketsDo $ WebSocket.runClient messengerHost messengerPort "/" clientApp)
+    (WebSocket.runClient messengerHost messengerPort "/" clientApp)
     (\exception -> do
       putStrLn $ "Connection to messenger lost: " <> show (exception :: WebSocket.ConnectionException)
       suspend $ msDelay 500
@@ -108,7 +110,7 @@ main = do
   case decodedHexFile of
     Right (HexFile services (MessengerDefinition messengerName messengerPort) entryServiceName) -> do
       httpHandler <- Docker.defaultHttpHandler
-      result <- Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
+      Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
         case Map.lookup messengerName services of
           Nothing -> fail $ "Messenger service " <> show messengerName <> " is not defined"
           Just messengerDefinition@(ServiceDefinition name imageName buildContext buildOptions createOptions) -> do
@@ -116,15 +118,13 @@ main = do
             stopAndRemove messengerDefinition
             runServiceContainer messengerDefinition
             let messengerHost = "localhost"
-            liftIO $ forkIO $ connectToMessenger messengerHost messengerPort $ app messengerHost messengerPort
+            wsClient <- liftIO $ async $ connectToMessenger messengerHost messengerPort $ app messengerHost messengerPort
             case Map.lookup entryServiceName services of
               Just entryServiceDefinition -> do
                 ensureBuiltImage entryServiceDefinition
                 stopAndRemove entryServiceDefinition
                 runServiceContainer entryServiceDefinition
+                liftIO $ wait wsClient
               Nothing -> fail $ "Entry service " <> show entryServiceName <> " is not defined"
-      case result of
-        Right _  -> putStrLn "Done"
-        Left err -> print err
 
     Left err -> putStrLn $ "Error reading Hexfile: " <> show err
