@@ -22,14 +22,15 @@ import           Control.Concurrent.Async (async, wait)
 
 
 import HexFile (HexFile(HexFile),
+                services,
                 ServiceDefinition(ServiceDefinition),
                 MessengerDefinition(MessengerDefinition))
 import Envelope (Envelope(Envelope), message)
 import Message (IncomingMessage(Start), OutgoingMessage(CheckIn))
 import Identity (Identity(Messenger, ContainerService))
 
-app :: String -> Int -> WebSocket.ClientApp ()
-app messengerHost messengerPort connection = do
+app :: HexFile -> String -> Int -> WebSocket.ClientApp ()
+app hexFile messengerHost messengerPort connection = do
   catch
     (WebSocket.sendTextData connection $ Aeson.encode $ Envelope Messenger (CheckIn ContainerService))
     (\exception -> putStrLn $ "Whoa " <> show (exception :: WebSocket.ConnectionException))
@@ -39,12 +40,23 @@ app messengerHost messengerPort connection = do
       (\exception -> do
         putStrLn $ "Error while receiving data" <> show (exception :: WebSocket.ConnectionException)
         suspend $ msDelay 500
-        connectToMessenger messengerHost messengerPort $ app messengerHost messengerPort
+        connectToMessenger messengerHost messengerPort $ app hexFile messengerHost messengerPort
         return "")
     case Aeson.eitherDecode string :: Either String (Envelope IncomingMessage) of
       Left err -> putStrLn err
-      Right Envelope {message = (Start identity)} ->
+      Right Envelope {message = (Start identity)} -> do
         putStrLn $ "Requested to start " <> show identity
+        httpHandler <- Docker.defaultHttpHandler
+        Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $ do
+          let serviceName        = Text.pack $ show identity
+              HexFile {services} = hexFile
+          case Map.lookup serviceName services of
+            Nothing -> fail $ "Service " <> show serviceName <> " is not defined"
+            Just serviceDefinition -> do
+              ensureBuiltImage serviceDefinition
+              stopAndRemove serviceDefinition
+              runServiceContainer serviceDefinition
+        return ()
 
 connectToMessenger :: String -> Int -> WebSocket.ClientApp () -> IO ()
 connectToMessenger messengerHost messengerPort clientApp =
@@ -104,7 +116,7 @@ main :: IO ()
 main = do
   decodedHexFile <- Yaml.decodeFileEither "./Hexfile.yml" :: IO (Either ParseException HexFile)
   case decodedHexFile of
-    Right (HexFile services (MessengerDefinition messengerName messengerPort) entryServiceName) -> do
+    Right hexFile@(HexFile services (MessengerDefinition messengerName messengerPort) entryServiceName) -> do
       httpHandler <- Docker.defaultHttpHandler
       Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
         case Map.lookup messengerName services of
@@ -114,7 +126,7 @@ main = do
             stopAndRemove messengerDefinition
             runServiceContainer messengerDefinition
             let messengerHost = "localhost"
-            wsClient <- liftIO $ async $ connectToMessenger messengerHost messengerPort $ app messengerHost messengerPort
+            wsClient <- liftIO $ async $ connectToMessenger messengerHost messengerPort $ app hexFile messengerHost messengerPort
             case Map.lookup entryServiceName services of
               Just entryServiceDefinition -> do
                 ensureBuiltImage entryServiceDefinition
