@@ -26,12 +26,12 @@ import HexFile (HexFile(HexFile),
                 MessengerDefinition(MessengerDefinition))
 import Envelope (Envelope(Envelope), message)
 import Message (IncomingMessage(Start), OutgoingMessage(CheckIn))
-import Identity (Identity(Messenger, MetaService))
+import Identity (Identity(Messenger, ContainerService))
 
 app :: String -> Int -> WebSocket.ClientApp ()
 app messengerHost messengerPort connection = do
   catch
-    (WebSocket.sendTextData connection $ Aeson.encode $ Envelope Messenger (CheckIn MetaService))
+    (WebSocket.sendTextData connection $ Aeson.encode $ Envelope Messenger (CheckIn ContainerService))
     (\exception -> putStrLn $ "Whoa " <> show (exception :: WebSocket.ConnectionException))
   forever $ do
     string <- catch

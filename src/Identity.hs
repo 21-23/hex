@@ -12,25 +12,25 @@ data Identity
   | FrontService
   | SandboxService
   | InitService
-  | MetaService
+  | ContainerService
   deriving (Eq, Ord)
 
 instance Show Identity where
-  show StateService   = "state-service"
-  show Messenger      = "messenger"
-  show FrontService   = "front-service"
-  show SandboxService = "sandbox-service"
-  show InitService    = "init-service"
-  show MetaService    = "meta-service"
+  show StateService     = "state-service"
+  show Messenger        = "messenger"
+  show FrontService     = "front-service"
+  show SandboxService   = "sandbox-service"
+  show InitService      = "init-service"
+  show ContainerService = "container-service"
 
 instance ToJSON Identity where
   toJSON = Aeson.String . pack . show
 
 parseIdentity :: String -> Maybe Identity
-parseIdentity "state-service"   = Just StateService
-parseIdentity "messenger"       = Just Messenger
-parseIdentity "front-service"   = Just FrontService
-parseIdentity "sandbox-service" = Just SandboxService
-parseIdentity "init-service"    = Just InitService
-parseIdentity "meta-service"    = Just MetaService
-parseIdentity _                 = Nothing
+parseIdentity "state-service"     = Just StateService
+parseIdentity "messenger"         = Just Messenger
+parseIdentity "front-service"     = Just FrontService
+parseIdentity "sandbox-service"   = Just SandboxService
+parseIdentity "init-service"      = Just InitService
+parseIdentity "container-service" = Just ContainerService
+parseIdentity _                   = Nothing
