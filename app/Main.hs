@@ -13,7 +13,6 @@ import Control.Monad.IO.Class (liftIO)
 import qualified Data.Text as Text
 import qualified Data.List as List
 import qualified Network.WebSockets as WebSocket
-import           Network.Socket (withSocketsDo)
 import           Control.Exception (IOException, catch)
 import           Control.Concurrent.Suspend.Lifted (msDelay, suspend)
 import           Control.Monad (forever, when)
@@ -44,8 +43,8 @@ app messengerHost messengerPort connection = do
         return "")
     case Aeson.eitherDecode string :: Either String (Envelope IncomingMessage) of
       Left err -> putStrLn err
-      Right Envelope {message} -> case message of
-        Start identity -> putStrLn $ "Requested to start " <> show identity
+      Right Envelope {message = (Start identity)} ->
+        putStrLn $ "Requested to start " <> show identity
 
 connectToMessenger :: String -> Int -> WebSocket.ClientApp () -> IO ()
 connectToMessenger messengerHost messengerPort clientApp =
@@ -80,10 +79,7 @@ ensureBuiltImage (ServiceDefinition _ imageName buildContext buildOptions _) = d
         basePath <- liftIO $ makeAbsolute $ Text.unpack buildContext
         result <- Docker.buildImageFromDockerfile buildOptions basePath
         case result of
-          Right _ ->
-            -- images <- Docker.listImages $ Docker.ListOpts True
-            -- liftIO $ print images
-            liftIO $ putStrLn "Build successful"
+          Right _  -> liftIO $ putStrLn "Build successful"
           Left err -> liftIO $ print err
 
 stopAndRemove :: ServiceDefinition -> Docker.DockerT IO ()

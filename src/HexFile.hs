@@ -17,7 +17,7 @@ import Docker.Client (BuildOpts, defaultBuildOpts,
                       PortType(TCP),
                       EnvVar(EnvVar),
                       ContainerConfig, exposedPorts, hostname, env, defaultContainerConfig,
-                      defaultNetworkConfig, aliases,
+                      NetworkConfig(NetworkConfig), aliases,
                       buildDockerfileName)
 import Data.Aeson (FromJSON(parseJSON), (.:), (.:?), (.!=), Value(Object, String))
 import Control.Monad (mzero)
@@ -85,8 +85,7 @@ instance FromJSON ServiceDefinition where
                                                 { exposedPorts
                                                 , env = envKeyValueToEnvVar <$> envVars
                                                 }
-                            networkConfig   = defaultNetworkConfig
-                                                { aliases = [name]}
+                            networkConfig   = NetworkConfig { aliases = [name]}
                          in CreateOpts containerConfig hostConfig (Just networkConfig)
     return $ ServiceDefinition name
                                hexName
