@@ -10,31 +10,35 @@ import Data.Aeson    (FromJSON(parseJSON),
                       (.=)
                       )
 import Control.Monad (mzero)
-import Data.Monoid   ((<>))
-import Data.Text     (Text)
+import Data.Semigroup   ((<>))
+import Data.Text     (Text, unpack)
 
-import Identity      (Identity, parseIdentity)
+import ServiceIdentity      (ServiceType, ServiceIdentity)
 
-newtype IncomingMessage
-  = Start Identity
+data IncomingMessage
+  = ServiceRequest ServiceIdentity ServiceType
+  | ServiceCheckIn ServiceIdentity
 
 instance FromJSON IncomingMessage where
   parseJSON (Object message) = do
     name <- message .: "name"
     case name of
-      String "start" -> do
-        identityString <- message .: "identity"
-        case parseIdentity identityString of
-          Just identity -> return $ Start identity
-          Nothing       -> fail   $ "Unrecognized identity " <> identityString
-      _                -> fail   "Message name is not a string"
+      String "service.request" -> ServiceRequest <$> message .: "from" <*> message .: "type"
+      String "service.checkin" -> ServiceCheckIn <$> message .: "identity"
+      String badName           -> fail $ "Unrecognized message: " <> unpack badName
+      _                        -> fail "Message name is not a string"
   parseJSON _ = mzero
 
-newtype OutgoingMessage
-  = CheckIn Identity
+data OutgoingMessage
+  = CheckIn ServiceType
+  | ServiceRequestFulfilled ServiceIdentity
 
 instance ToJSON OutgoingMessage where
-  toJSON (CheckIn identity) = object
-    [ "name"     .= ("checkin" :: Text)
+  toJSON (CheckIn serviceType) = object
+    [ "name"     .= String "checkin"
+    , "identity" .= serviceType
+    ]
+  toJSON (ServiceRequestFulfilled identity) = object
+    [ "name"     .= String "service.requestFulfilled"
     , "identity" .= identity
     ]

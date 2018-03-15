@@ -18,6 +18,7 @@ import           Control.Concurrent.Suspend.Lifted (msDelay, suspend)
 import           Control.Monad (forever, when)
 import qualified Data.Aeson as Aeson
 import qualified Data.Maybe as Maybe
+import           Control.Concurrent (newMVar, takeMVar, putMVar)
 import           Control.Concurrent.Async (async, wait)
 
 
@@ -26,11 +27,17 @@ import HexFile (HexFile(HexFile),
                 ServiceDefinition(ServiceDefinition),
                 MessengerDefinition(MessengerDefinition))
 import Envelope (Envelope(Envelope), message)
-import Message (IncomingMessage(Start), OutgoingMessage(CheckIn))
-import Identity (Identity(Messenger, ContainerService))
+import Message (IncomingMessage(ServiceRequest, ServiceCheckIn),
+                OutgoingMessage(CheckIn, ServiceRequestFulfilled))
+import ServiceIdentity (ServiceType(ContainerService),
+                        ServiceSelector(Messenger, Service),
+                        ServiceIdentity(ServiceIdentity))
+import State (State)
+import qualified State
 
 app :: HexFile -> String -> Int -> WebSocket.ClientApp ()
 app hexFile messengerHost messengerPort connection = do
+  stateVar <- newMVar State.empty
   catch
     (WebSocket.sendTextData connection $ Aeson.encode $ Envelope Messenger (CheckIn ContainerService))
     (\exception -> putStrLn $ "Whoa " <> show (exception :: WebSocket.ConnectionException))
@@ -44,19 +51,34 @@ app hexFile messengerHost messengerPort connection = do
         return "")
     case Aeson.eitherDecode string :: Either String (Envelope IncomingMessage) of
       Left err -> putStrLn err
-      Right Envelope {message = (Start identity)} -> do
-        putStrLn $ "Requested to start " <> show identity
-        httpHandler <- Docker.defaultHttpHandler
-        Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $ do
-          let serviceName        = Text.pack $ show identity
-              HexFile {services} = hexFile
-          case Map.lookup serviceName services of
-            Nothing -> fail $ "Service " <> show serviceName <> " is not defined"
-            Just serviceDefinition -> do
-              ensureBuiltImage serviceDefinition
-              stopAndRemove serviceDefinition
-              runServiceContainer serviceDefinition
-        return ()
+      Right Envelope{message} ->
+        case message of
+          ServiceRequest from serviceType -> do
+            putStrLn $ "Requested to start " <> show serviceType
+            state <- takeMVar stateVar
+            let request = State.ServiceRequest from serviceType
+            putMVar stateVar $ State.addRequest request state
+            httpHandler <- Docker.defaultHttpHandler
+            Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $ do
+              let serviceName        = Text.pack $ show serviceType
+                  HexFile {services} = hexFile
+              case Map.lookup serviceName services of
+                Nothing -> fail $ "Service " <> show serviceName <> " is not defined"
+                Just serviceDefinition -> do
+                  ensureBuiltImage serviceDefinition
+                  stopAndRemove serviceDefinition
+                  runServiceContainer serviceDefinition
+            return ()
+
+          ServiceCheckIn serviceIdentity@(ServiceIdentity serviceType _) -> do
+            putStrLn $ "Got a checkin message from " <> show serviceIdentity
+            state <- takeMVar stateVar
+            case State.fulfillRequest serviceType state of
+              Just (State.ServiceRequest identity newServiceIdentity, newState) -> do
+                putMVar stateVar newState
+                WebSocket.sendTextData connection $ Aeson.encode $
+                  Envelope (Service identity) (ServiceRequestFulfilled serviceIdentity)
+              Nothing -> putMVar stateVar state
 
 connectToMessenger :: String -> Int -> WebSocket.ClientApp () -> IO ()
 connectToMessenger messengerHost messengerPort clientApp =
@@ -127,12 +149,13 @@ main = do
             runServiceContainer messengerDefinition
             let messengerHost = "localhost"
             wsClient <- liftIO $ async $ connectToMessenger messengerHost messengerPort $ app hexFile messengerHost messengerPort
-            case Map.lookup entryServiceName services of
-              Just entryServiceDefinition -> do
-                ensureBuiltImage entryServiceDefinition
-                stopAndRemove entryServiceDefinition
-                runServiceContainer entryServiceDefinition
-                liftIO $ wait wsClient
-              Nothing -> fail $ "Entry service " <> show entryServiceName <> " is not defined"
+            liftIO $ wait wsClient
+            -- case Map.lookup entryServiceName services of
+            --   Just entryServiceDefinition -> do
+            --     ensureBuiltImage entryServiceDefinition
+            --     stopAndRemove entryServiceDefinition
+            --     runServiceContainer entryServiceDefinition
+            --
+            --   Nothing -> fail $ "Entry service " <> show entryServiceName <> " is not defined"
 
     Left err -> putStrLn $ "Error reading Hexfile: " <> show err
