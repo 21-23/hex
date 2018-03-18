@@ -58,10 +58,14 @@ instance FromJSON EnvKeyValue where
 envKeyValueToEnvVar :: EnvKeyValue -> EnvVar
 envKeyValueToEnvVar (EnvKeyValue key value) = EnvVar key value
 
+data BuildContext
+  = DockerFile Text
+  | Image      Text
+
 data ServiceDefinition = ServiceDefinition
   { name          :: ServiceName
   , imageName     :: Text
-  , buildContext  :: Text
+  , buildContext  :: BuildContext
   , buildOptions  :: BuildOpts
   , createOptions :: CreateOpts
   }
@@ -69,11 +73,20 @@ data ServiceDefinition = ServiceDefinition
 instance FromJSON ServiceDefinition where
   parseJSON (Object definition) = do
     name <- definition .: "name"
-    buildContext <- definition .: "context"
+    mContext <- definition .:? "context"
+    mImageName <- definition .:? "image"
+    buildContext <- case (mContext, mImageName) of
+                      (Just context, _)    -> return $ DockerFile context
+                      (_, Just imageName)  -> return $ Image imageName
+                      (_, _)               -> fail "Unrecognized build context"
+
     portMappings <- definition .:? "ports" .!= []
     envVars <- definition .:? "environment" .!= []
 
     let hexName       = "hex_" <> name
+        imageName     = case buildContext of
+                          DockerFile _  -> hexName
+                          Image imgName -> imgName
         buildOptions  = defaultBuildOpts hexName
         createOptions = let portBindings    = mappingToBinding <$> portMappings
                             exposedPorts    = mappingToExposedPort <$> portMappings
@@ -81,7 +94,7 @@ instance FromJSON ServiceDefinition where
                                                 { portBindings
                                                 , networkMode = NetworkNamed "test-network"
                                                 }
-                            containerConfig = (defaultContainerConfig hexName)
+                            containerConfig = (defaultContainerConfig imageName)
                                                 { exposedPorts
                                                 , env = envKeyValueToEnvVar <$> envVars
                                                 }
@@ -107,17 +120,17 @@ instance FromJSON MessengerDefinition where
   parseJSON _ = mzero
 
 data HexFile = HexFile
-  { services  :: Map ServiceName ServiceDefinition
-  , messenger :: MessengerDefinition
-  , entry     :: ServiceName
+  { services     :: Map ServiceName ServiceDefinition
+  , messenger    :: MessengerDefinition
+  , initSequence :: [ServiceName]
   }
 
 instance FromJSON HexFile where
   parseJSON (Object hexFile) = do
     serviceList <- hexFile .: "services"
     messenger <- hexFile .: "messenger"
-    entry <- hexFile .: "entry"
+    initSequence <- hexFile .: "init-sequence"
     let makeTuples definition@ServiceDefinition{name} = (name, definition)
         services = Map.fromList $ makeTuples <$> serviceList
-    return $ HexFile services messenger entry
+    return $ HexFile services messenger initSequence
   parseJSON _ = mzero

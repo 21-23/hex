@@ -20,12 +20,14 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Maybe as Maybe
 import           Control.Concurrent (newMVar, takeMVar, putMVar)
 import           Control.Concurrent.Async (async, wait)
+import           Data.Foldable (for_)
 
 
 import HexFile (HexFile(HexFile),
                 services,
                 ServiceDefinition(ServiceDefinition),
-                MessengerDefinition(MessengerDefinition))
+                MessengerDefinition(MessengerDefinition),
+                BuildContext(DockerFile, Image))
 import Envelope (Envelope(Envelope), message)
 import Message (IncomingMessage(ServiceRequest, ServiceCheckIn),
                 OutgoingMessage(CheckIn, ServiceRequestFulfilled))
@@ -91,7 +93,7 @@ connectToMessenger messengerHost messengerPort clientApp =
       connectToMessenger messengerHost messengerPort clientApp)
 
 runServiceContainer :: ServiceDefinition -> Docker.DockerT IO (Either Docker.DockerError ())
-runServiceContainer (ServiceDefinition name imageName _ _ createOptions) = do
+runServiceContainer (ServiceDefinition name imageName buildContext _ createOptions) = do
   liftIO $ putStrLn $ "Creating " <> Text.unpack name <> "..."
   createResult <- Docker.createContainer createOptions (Just imageName)
   case createResult of
@@ -106,27 +108,30 @@ ensureBuiltImage (ServiceDefinition _ imageName buildContext buildOptions _) = d
   case listResult of
     Left err -> fail $ show err
     Right images -> do
-      let maybeImage = List.find (\DockerImage {Docker.imageRepoTags} ->
-                             (imageName <> ":latest") `elem` imageRepoTags) images
-      when (Maybe.isNothing maybeImage) $ do
-        liftIO $ putStrLn $ "Service " <> show imageName <> " is not built, building..."
-        basePath <- liftIO $ makeAbsolute $ Text.unpack buildContext
-        result <- Docker.buildImageFromDockerfile buildOptions basePath
-        case result of
-          Right _  -> liftIO $ putStrLn "Build successful"
-          Left err -> liftIO $ print err
+      let findImage img = List.find (\DockerImage {Docker.imageRepoTags} ->
+                                      (img <> ":latest") `elem` imageRepoTags) images
+      case buildContext of
+        DockerFile path ->
+          when (Maybe.isNothing $ findImage imageName) $ do
+            liftIO $ putStrLn $ "Service " <> show imageName <> " is not built, building..."
+            basePath <- liftIO $ makeAbsolute $ Text.unpack path
+            Docker.buildImageFromDockerfile buildOptions basePath
+            return ()
+        Image name ->
+          when (Maybe.isNothing $ findImage name) $
+            liftIO $ putStrLn $ "Service image " <> show name <> " is not pulled"
 
 stopAndRemove :: ServiceDefinition -> Docker.DockerT IO ()
-stopAndRemove (ServiceDefinition _ imageName buildContext buildOptions _) = do
+stopAndRemove (ServiceDefinition _ name buildContext buildOptions _) = do
   listResult <- Docker.listContainers $ Docker.ListOpts True
   case listResult of
     Left err -> fail $ show err
     Right containers -> do
-      let maybeContainer = List.find (\Docker.Container {Docker.containerImageName} ->
-                             containerImageName == imageName) containers
-      case maybeContainer of
+      let findContainer = List.find (\Docker.Container {Docker.containerNames} ->
+                             ("/" <> name) `elem` containerNames) containers
+      case findContainer of
         Just Docker.Container {Docker.containerId} -> do
-          liftIO $ putStrLn $ "A container for " <> show imageName <> " already exists, stopping & removing..."
+          liftIO $ putStrLn $ "A container for " <> show name <> " already exists, stopping & removing..."
           Docker.stopContainer Docker.DefaultTimeout containerId
           result <- Docker.deleteContainer Docker.defaultDeleteOpts containerId
           case result of
@@ -138,7 +143,7 @@ main :: IO ()
 main = do
   decodedHexFile <- Yaml.decodeFileEither "./Hexfile.yml" :: IO (Either ParseException HexFile)
   case decodedHexFile of
-    Right hexFile@(HexFile services (MessengerDefinition messengerName messengerPort) entryServiceName) -> do
+    Right hexFile@(HexFile services (MessengerDefinition messengerName messengerPort) initSequence) -> do
       httpHandler <- Docker.defaultHttpHandler
       Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
         case Map.lookup messengerName services of
@@ -149,13 +154,15 @@ main = do
             runServiceContainer messengerDefinition
             let messengerHost = "localhost"
             wsClient <- liftIO $ async $ connectToMessenger messengerHost messengerPort $ app hexFile messengerHost messengerPort
+
+            for_ initSequence $ \serviceName ->
+              case Map.lookup serviceName services of
+                Just entryServiceDefinition -> do
+                  ensureBuiltImage entryServiceDefinition
+                  stopAndRemove entryServiceDefinition
+                  runServiceContainer entryServiceDefinition
+                Nothing -> fail $ "Init sequence: service " <> show serviceName <> " is not defined"
+
             liftIO $ wait wsClient
-            -- case Map.lookup entryServiceName services of
-            --   Just entryServiceDefinition -> do
-            --     ensureBuiltImage entryServiceDefinition
-            --     stopAndRemove entryServiceDefinition
-            --     runServiceContainer entryServiceDefinition
-            --
-            --   Nothing -> fail $ "Entry service " <> show entryServiceName <> " is not defined"
 
     Left err -> putStrLn $ "Error reading Hexfile: " <> show err

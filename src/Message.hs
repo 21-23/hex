@@ -24,7 +24,7 @@ instance FromJSON IncomingMessage where
     name <- message .: "name"
     case name of
       String "service.request" -> ServiceRequest <$> message .: "from" <*> message .: "type"
-      String "service.checkin" -> ServiceCheckIn <$> message .: "identity"
+      String "checkedIn"       -> ServiceCheckIn <$> message .: "identity"
       String badName           -> fail $ "Unrecognized message: " <> unpack badName
       _                        -> fail "Message name is not a string"
   parseJSON _ = mzero
