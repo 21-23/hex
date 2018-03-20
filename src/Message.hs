@@ -18,6 +18,7 @@ import ServiceIdentity      (ServiceType, ServiceIdentity)
 data IncomingMessage
   = ServiceRequest ServiceIdentity ServiceType
   | ServiceCheckIn ServiceIdentity
+  | Shutdown
 
 instance FromJSON IncomingMessage where
   parseJSON (Object message) = do
@@ -25,6 +26,7 @@ instance FromJSON IncomingMessage where
     case name of
       String "service.request" -> ServiceRequest <$> message .: "from" <*> message .: "type"
       String "checkedIn"       -> ServiceCheckIn <$> message .: "identity"
+      String "shutdown"        -> pure Shutdown
       String badName           -> fail $ "Unrecognized message: " <> unpack badName
       _                        -> fail "Message name is not a string"
   parseJSON _ = mzero

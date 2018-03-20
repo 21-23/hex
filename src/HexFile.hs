@@ -70,6 +70,14 @@ data ServiceDefinition = ServiceDefinition
   , createOptions :: CreateOpts
   }
 
+getHexName :: Text -> Text
+getHexName string =
+  let hexPrefix = "hex_"
+      name = case splitOn ":" string of
+               [serviceName, _] -> serviceName
+               _                -> string
+   in hexPrefix <> name
+
 instance FromJSON ServiceDefinition where
   parseJSON (Object definition) = do
     name <- definition .: "name"
@@ -83,7 +91,7 @@ instance FromJSON ServiceDefinition where
     portMappings <- definition .:? "ports" .!= []
     envVars <- definition .:? "environment" .!= []
 
-    let hexName       = "hex_" <> name
+    let hexName       = getHexName name
         imageName     = case buildContext of
                           DockerFile _  -> hexName
                           Image imgName -> imgName

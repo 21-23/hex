@@ -18,7 +18,7 @@ import           Control.Concurrent.Suspend.Lifted (msDelay, suspend)
 import           Control.Monad (forever, when)
 import qualified Data.Aeson as Aeson
 import qualified Data.Maybe as Maybe
-import           Control.Concurrent (newMVar, takeMVar, putMVar)
+import           Control.Concurrent (MVar, newMVar, takeMVar, putMVar, readMVar)
 import           Control.Concurrent.Async (async, wait)
 import           Data.Foldable (for_)
 
@@ -29,7 +29,7 @@ import HexFile (HexFile(HexFile),
                 MessengerDefinition(MessengerDefinition),
                 BuildContext(DockerFile, Image))
 import Envelope (Envelope(Envelope), message)
-import Message (IncomingMessage(ServiceRequest, ServiceCheckIn),
+import Message (IncomingMessage(ServiceRequest, ServiceCheckIn, Shutdown),
                 OutgoingMessage(CheckIn, ServiceRequestFulfilled))
 import ServiceIdentity (ServiceType(ContainerService),
                         ServiceSelector(Messenger, Service),
@@ -37,9 +37,8 @@ import ServiceIdentity (ServiceType(ContainerService),
 import State (State)
 import qualified State
 
-app :: HexFile -> String -> Int -> WebSocket.ClientApp ()
-app hexFile messengerHost messengerPort connection = do
-  stateVar <- newMVar State.empty
+app :: MVar State -> HexFile -> String -> Int -> WebSocket.ClientApp ()
+app stateVar hexFile messengerHost messengerPort connection = do
   catch
     (WebSocket.sendTextData connection $ Aeson.encode $ Envelope Messenger (CheckIn ContainerService))
     (\exception -> putStrLn $ "Whoa " <> show (exception :: WebSocket.ConnectionException))
@@ -49,7 +48,7 @@ app hexFile messengerHost messengerPort connection = do
       (\exception -> do
         putStrLn $ "Error while receiving data" <> show (exception :: WebSocket.ConnectionException)
         suspend $ msDelay 500
-        connectToMessenger messengerHost messengerPort $ app hexFile messengerHost messengerPort
+        connectToMessenger messengerHost messengerPort $ app stateVar hexFile messengerHost messengerPort
         return "")
     case Aeson.eitherDecode string :: Either String (Envelope IncomingMessage) of
       Left err -> putStrLn err
@@ -68,8 +67,7 @@ app hexFile messengerHost messengerPort connection = do
                 Nothing -> fail $ "Service " <> show serviceName <> " is not defined"
                 Just serviceDefinition -> do
                   ensureBuiltImage serviceDefinition
-                  stopAndRemove serviceDefinition
-                  runServiceContainer serviceDefinition
+                  runServiceContainer stateVar serviceDefinition
             return ()
 
           ServiceCheckIn serviceIdentity@(ServiceIdentity serviceType _) -> do
@@ -82,6 +80,20 @@ app hexFile messengerHost messengerPort connection = do
                   Envelope (Service identity) (ServiceRequestFulfilled serviceIdentity)
               Nothing -> putMVar stateVar state
 
+          Shutdown -> do
+            WebSocket.sendClose connection ("Hex is shutting down. See ya, Arnaux" :: Text.Text)
+            state <- readMVar stateVar
+            httpHandler <- Docker.defaultHttpHandler
+            Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
+              for_ (State.containerIds state) stopAndRemove
+                where
+                  stopAndRemove containerId = do
+                    Docker.stopContainer Docker.DefaultTimeout containerId
+                    result <- Docker.deleteContainer Docker.defaultDeleteOpts containerId
+                    case result of
+                      Right _  -> liftIO $ putStrLn $ "Cleaned up successfully: " <> show containerId
+                      Left err -> liftIO $ print err
+
 connectToMessenger :: String -> Int -> WebSocket.ClientApp () -> IO ()
 connectToMessenger messengerHost messengerPort clientApp =
   catch
@@ -92,13 +104,15 @@ connectToMessenger messengerHost messengerPort clientApp =
       putStrLn "Reconnecting..."
       connectToMessenger messengerHost messengerPort clientApp)
 
-runServiceContainer :: ServiceDefinition -> Docker.DockerT IO (Either Docker.DockerError ())
-runServiceContainer (ServiceDefinition name imageName buildContext _ createOptions) = do
+runServiceContainer :: MVar State -> ServiceDefinition -> Docker.DockerT IO (Either Docker.DockerError ())
+runServiceContainer stateVar (ServiceDefinition name imageName buildContext _ createOptions) = do
   liftIO $ putStrLn $ "Creating " <> Text.unpack name <> "..."
-  createResult <- Docker.createContainer createOptions (Just imageName)
+  createResult <- Docker.createContainer createOptions Nothing
   case createResult of
     Left err -> fail $ show err
     Right containerId -> do
+      state <- liftIO $ takeMVar stateVar
+      liftIO $ putMVar stateVar $ State.addContainerId containerId state
       liftIO $ putStrLn $ "Starting " <> Text.unpack name <> "..."
       Docker.startContainer Docker.defaultStartOpts containerId
 
@@ -149,18 +163,16 @@ main = do
         case Map.lookup messengerName services of
           Nothing -> fail $ "Messenger service " <> show messengerName <> " is not defined"
           Just messengerDefinition@(ServiceDefinition name imageName buildContext buildOptions createOptions) -> do
+            stateVar <- liftIO $ newMVar State.empty
             ensureBuiltImage messengerDefinition
-            stopAndRemove messengerDefinition
-            runServiceContainer messengerDefinition
+            runServiceContainer stateVar messengerDefinition
             let messengerHost = "localhost"
-            wsClient <- liftIO $ async $ connectToMessenger messengerHost messengerPort $ app hexFile messengerHost messengerPort
-
+            wsClient <- liftIO $ async $ connectToMessenger messengerHost messengerPort $ app stateVar hexFile messengerHost messengerPort
             for_ initSequence $ \serviceName ->
               case Map.lookup serviceName services of
                 Just entryServiceDefinition -> do
                   ensureBuiltImage entryServiceDefinition
-                  stopAndRemove entryServiceDefinition
-                  runServiceContainer entryServiceDefinition
+                  runServiceContainer stateVar entryServiceDefinition
                 Nothing -> fail $ "Init sequence: service " <> show serviceName <> " is not defined"
 
             liftIO $ wait wsClient

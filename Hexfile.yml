@@ -51,6 +51,7 @@ services:
     context: ../qd-platform/zandbak-service
     environment:
       - remote_uri=ws://messenger:3000
+      - remote_identity=sandbox-service:cssqd
       - zandbakConfig_sand=lodash
       - zandbakConfig_validators=banned-chars
       - zandbakConfig_backend=electron
@@ -61,6 +62,7 @@ services:
     context: ../qd-platform/zandbak-service
     environment:
       - remote_uri=ws://messenger:3000
+      - remote_identity=sandbox-service:_qd
       - zandbakConfig_sand=css
       - zandbakConfig_validators=banned-chars
       - zandbakConfig_backend=electron

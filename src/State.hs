@@ -2,6 +2,8 @@
 
 module State where
 
+import qualified Docker.Client as Docker
+
 import ServiceIdentity (ServiceIdentity, ServiceType)
 
 data ServiceRequest = ServiceRequest
@@ -9,12 +11,13 @@ data ServiceRequest = ServiceRequest
   , serviceType :: ServiceType
   }
 
-newtype State = State
+data State = State
   { requestQueue :: [ServiceRequest]
+  , containerIds :: [Docker.ContainerID]
   }
 
 empty :: State
-empty = State []
+empty = State [] []
 
 addRequest :: ServiceRequest -> State -> State
 addRequest request state@State{requestQueue} =
@@ -28,3 +31,7 @@ fulfillRequest reqServiceType state@State{requestQueue} =
                                         else (requests ++ [request], fulfilled))
                                     ([], Nothing) requestQueue
    in (\request -> (request, state { requestQueue = requests })) <$> fulfilled
+
+addContainerId :: Docker.ContainerID -> State -> State
+addContainerId containerId state@State{containerIds} =
+  state { containerIds = containerIds ++ [containerId] }
