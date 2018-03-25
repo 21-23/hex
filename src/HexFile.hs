@@ -5,6 +5,7 @@ module HexFile where
 
 import Data.Text (Text, splitOn, unpack)
 import Data.Map.Strict (Map)
+import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
 import Docker.Client (BuildOpts, defaultBuildOpts,
                       CreateOpts(CreateOpts), defaultCreateOpts,
@@ -17,7 +18,8 @@ import Docker.Client (BuildOpts, defaultBuildOpts,
                       PortType(TCP),
                       EnvVar(EnvVar),
                       ContainerConfig, exposedPorts, hostname, env, defaultContainerConfig,
-                      NetworkConfig(NetworkConfig), aliases,
+                      EndpointConfig(EndpointConfig),
+                      NetworkingConfig(NetworkingConfig), endpointsConfig,
                       buildDockerfileName)
 import Data.Aeson (FromJSON(parseJSON), (.:), (.:?), (.!=), Value(Object, String))
 import Control.Monad (mzero)
@@ -106,7 +108,8 @@ instance FromJSON ServiceDefinition where
                                                 { exposedPorts
                                                 , env = envKeyValueToEnvVar <$> envVars
                                                 }
-                            networkConfig   = NetworkConfig { aliases = [name]}
+                            endpointsConfig = HashMap.fromList [("test-network", EndpointConfig [name])]
+                            networkConfig   = NetworkingConfig {endpointsConfig}
                          in CreateOpts containerConfig hostConfig (Just networkConfig)
     return $ ServiceDefinition name
                                hexName
