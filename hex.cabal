@@ -20,12 +20,19 @@ description:         Please see the README on Github at <https://github.com/gith
 library
   hs-source-dirs:      src
   exposed-modules:     HexFile
+                     , Envelope
+                     , Message
+                     , Game
+                     , ServiceIdentity
+                     , State
   build-depends:       base >= 4.7 && < 5
                      , containers -any
                      , aeson -any
                      , text -any
                      , yaml -any
                      , docker -any
+                     , uuid -any
+                     , unordered-containers -any
   default-language:    Haskell2010
 
 executable hex-exe
@@ -38,6 +45,13 @@ executable hex-exe
                      , containers -any
                      , docker -any
                      , directory
+                     , text
+                     , network
+                     , websockets
+                     , timers
+                     , suspend
+                     , aeson
+                     , async
   default-language:    Haskell2010
 
 test-suite hex-test

@@ -1,18 +1,82 @@
 services:
   -
+    name: mongo-front-service
+    image: mongo
+    ports:
+      - "27019:27017"
+  -
+    name: mongo-state
+    image: mongo
+    ports:
+      - "27018:27017"
+  -
+    name: mongo-logs
+    image: mongo
+    ports:
+      - "27020:27017"
+    volumes:
+      - type: volume
+        source: ./mongo-logs
+        target: /data/db
+  -
     name: messenger
-    dockerFile: ../qd-platform/arnaux
+    context: ../qd-platform/arnaux
+    environment:
+      - ARNAUX_LOG_LEVEL=Trace
+    ports:
+      - "3002:3000"
   -
     name: state-service
-    dockerFile: ../qd-platform/redemption
+    context: ../qd-platform/redemption
+    environment:
+      - redemption_environment=prod
   -
     name: front-service
-    dockerFile: ../qd-platform/front-service
+    context: ../qd-platform/front-service
+    volumes:
+      - type: volume
+        source: ./front-service/logs
+        target: /front-end-service/logs
+    environment:
+      - DB_URI=mongodb://mongo-front-service/fe-db
+      - ARNAUX_URL=ws://messenger:3000
+      - GUNSLINGERS=true
+      - LOG_LEVEL=info
+      - LOG_DBURI=mongodb://mongo-logs/qd-logs
+    ports:
+      - "3000:3000"
+      - "3001:3001"
   -
-    name: sandbox-service
-    dockerFile: ../qd-platform/zandbak-service
+    name: sandbox-service:cssqd
+    context: ../qd-platform/zandbak-service
+    environment:
+      - remote_uri=ws://messenger:3000
+      - remote_identity=sandbox-service:cssqd
+      - zandbakConfig_sand=css
+      - zandbakConfig_validators=banned-chars
+      - zandbakConfig_backend=electron
+      - ELECTRON_ENABLE_LOGGING=1
+      - logLevel=+perf,+error,+info
+  -
+    name: sandbox-service:_qd
+    context: ../qd-platform/zandbak-service
+    environment:
+      - remote_uri=ws://messenger:3000
+      - remote_identity=sandbox-service:_qd
+      - zandbakConfig_sand=lodash
+      - zandbakConfig_validators=banned-chars
+      - zandbakConfig_backend=electron
+      - ELECTRON_ENABLE_LOGGING=1
+      - logLevel=+perf,+error,+info
   -
     name: init-service
-    dockerFile: ../qd-platform/ignition
+    context: ../qd-platform/ignition
 
-entry: messenger
+messenger:
+  service: messenger
+  port: 3002
+
+init-sequence:
+  - mongo-front-service
+  - mongo-state
+  - mongo-logs
