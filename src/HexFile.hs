@@ -110,7 +110,7 @@ instance FromJSON ServiceDefinition where
                                                 }
                             endpointsConfig = HashMap.fromList [("test-network", EndpointConfig [name])]
                             networkConfig   = NetworkingConfig {endpointsConfig}
-                         in CreateOpts containerConfig hostConfig (Just networkConfig)
+                         in CreateOpts containerConfig hostConfig networkConfig
     return $ ServiceDefinition name
                                hexName
                                buildContext
