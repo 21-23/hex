@@ -37,6 +37,9 @@ import ServiceIdentity (ServiceType(ContainerService),
 import State (State)
 import qualified State
 
+dockerDefaultUnixHandler :: IO (Docker.HttpHandler IO)
+dockerDefaultUnixHandler = Docker.unixHttpHandler "/var/run/docker.sock"
+
 app :: MVar State -> HexFile -> String -> Int -> WebSocket.ClientApp ()
 app stateVar hexFile messengerHost messengerPort connection = do
   catch
@@ -59,8 +62,8 @@ app stateVar hexFile messengerHost messengerPort connection = do
             state <- takeMVar stateVar
             let request = State.ServiceRequest from serviceType
             putMVar stateVar $ State.addRequest request state
-            httpHandler <- Docker.defaultHttpHandler
-            Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $ do
+            httpHandler <- dockerDefaultUnixHandler
+            Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $ do
               let serviceName        = Text.pack $ show serviceType
                   HexFile {services} = hexFile
               case Map.lookup serviceName services of
@@ -83,8 +86,8 @@ app stateVar hexFile messengerHost messengerPort connection = do
           Shutdown -> do
             WebSocket.sendClose connection ("Hex is shutting down. See ya, Arnaux" :: Text.Text)
             state <- readMVar stateVar
-            httpHandler <- Docker.defaultHttpHandler
-            Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
+            httpHandler <- dockerDefaultUnixHandler
+            Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $
               for_ (State.containerIds state) stopAndRemove
                 where
                   stopAndRemove containerId = do
@@ -158,8 +161,8 @@ main = do
   decodedHexFile <- Yaml.decodeFileEither "./Hexfile.yml" :: IO (Either ParseException HexFile)
   case decodedHexFile of
     Right hexFile@(HexFile services (MessengerDefinition messengerName messengerPort) initSequence) -> do
-      httpHandler <- Docker.defaultHttpHandler
-      Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
+      httpHandler <- dockerDefaultUnixHandler
+      Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $
         case Map.lookup messengerName services of
           Nothing -> fail $ "Messenger service " <> show messengerName <> " is not defined"
           Just messengerDefinition@(ServiceDefinition name imageName buildContext buildOptions createOptions) -> do
