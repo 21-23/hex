@@ -152,8 +152,6 @@ stopAndRemove (ServiceDefinition _ name buildContext buildOptions _) = do
             Left err -> liftIO $ print err
         Nothing -> return ()
 
--- TODO: some long-running operations such as building or pulling docker image may need special care
--- TODO: handle exceptions in main thread
 shutdown :: MVar State -> ExitFlag -> IO ()
 shutdown stateVar exitFlag = do
   putStrLn "Shutting down..."
@@ -183,7 +181,6 @@ shutdown stateVar exitFlag = do
       result <- Docker.deleteContainer Docker.defaultDeleteOpts containerId
       case result of
         Left err -> liftIO $ print err
-        -- TODO: remove containerId from State after successfull cleanup
         Right _  -> liftIO $ putStrLn $ "Cleaned up successfully: " <> show containerId
 
 setupInterruptionHandlers :: IO () -> IO Handler
