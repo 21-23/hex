@@ -190,13 +190,13 @@ setupInterruptionHandlers handler = do
 
 type ExitFlag = MVar ()
 
-newExitFlag :: IO (MVar ())
+newExitFlag :: IO ExitFlag
 newExitFlag = newEmptyMVar
 
-setExitFlag :: MVar () -> IO ()
+setExitFlag :: ExitFlag -> IO ()
 setExitFlag flag = putMVar flag ()
 
-waitForExitFlag :: MVar () -> IO ()
+waitForExitFlag :: ExitFlag -> IO ()
 waitForExitFlag = takeMVar
 
 main :: IO ()
