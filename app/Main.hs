@@ -3,6 +3,7 @@
 
 module Main where
 
+import Data.Functor (($>))
 import Data.Yaml as Yaml
 import qualified Docker.Client as Docker
 import Docker.Client.Types (Image(DockerImage))
@@ -79,7 +80,7 @@ app stateVar hexFile shutdownHandler connection = do
                   Envelope (Service identity) (ServiceRequestFulfilled serviceIdentity)
               Nothing -> putMVar stateVar state
 
-          Shutdown -> async shutdownHandler >> pure ()
+          Shutdown -> async shutdownHandler $> ()
             
 connectToMessenger :: MVar State -> String -> Int -> WebSocket.ClientApp () -> IO ()
 connectToMessenger stateVar messengerHost messengerPort clientApp =
