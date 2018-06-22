@@ -169,7 +169,7 @@ shutdown stateVar exitFlag = do
       _ -> return state
     
   -- kill containers
-  httpHandler <- Docker.defaultHttpHandler
+  httpHandler <- dockerDefaultUnixHandler
   state <- readMVar stateVar
   Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
     for_ (State.containerIds state) stopAndRemove
