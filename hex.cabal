@@ -44,6 +44,7 @@ executable hex-exe
                      , hex
                      , yaml -any
                      , containers -any
+                     , unordered-containers -any
                      , docker -any
                      , directory
                      , text
