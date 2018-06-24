@@ -4,7 +4,6 @@
 module Main where
 
 import Data.Functor (($>))
-import Data.Yaml as Yaml
 import qualified Data.HashMap.Strict as HashMap
 import qualified Docker.Client as Docker
 import Docker.Client.Types (Image(DockerImage))
@@ -27,6 +26,7 @@ import           System.Posix.Signals       (Handler (CatchOnce),
                                              installHandler, sigINT, sigTERM)
 
 
+import qualified HexFile
 import HexFile (HexFile(HexFile),
                 services,
                 ServiceDefinition(ServiceDefinition),
@@ -220,7 +220,7 @@ main = do
   exitFlag <- newExitFlag
   let shutdownHandler = shutdown stateVar exitFlag
   setupInterruptionHandlers shutdownHandler
-  decodedHexFile <- Yaml.decodeFileEither "./Hexfile.yml" :: IO (Either ParseException HexFile)
+  decodedHexFile <- HexFile.decode "./Hexfile.yml"
   case decodedHexFile of
     Right hexFile@(HexFile services (MessengerDefinition messengerName messengerPort) initSequence) -> do
       httpHandler <- Docker.defaultHttpHandler

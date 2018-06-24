@@ -34,6 +34,7 @@ library
                      , uuid -any
                      , unordered-containers -any
                      , websockets
+                     , directory
   default-language:    Haskell2010
 
 executable hex-exe
