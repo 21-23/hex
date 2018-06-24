@@ -102,13 +102,13 @@ instance FromJSON ServiceDefinition where
                             exposedPorts    = mappingToExposedPort <$> portMappings
                             hostConfig      = defaultHostConfig
                                                 { portBindings
-                                                , networkMode = NetworkNamed "test-network"
+                                                , networkMode = NetworkNamed "hex-network"
                                                 }
                             containerConfig = (defaultContainerConfig imageName)
                                                 { exposedPorts
                                                 , env = envKeyValueToEnvVar <$> envVars
                                                 }
-                            endpointsConfig = HashMap.fromList [("test-network", EndpointConfig [name])]
+                            endpointsConfig = HashMap.fromList [("hex-network", EndpointConfig [name])]
                             networkConfig   = NetworkingConfig {endpointsConfig}
                          in CreateOpts containerConfig hostConfig networkConfig
     return $ ServiceDefinition name

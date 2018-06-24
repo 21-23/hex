@@ -5,6 +5,7 @@ module Main where
 
 import Data.Functor (($>))
 import Data.Yaml as Yaml
+import qualified Data.HashMap.Strict as HashMap
 import qualified Docker.Client as Docker
 import Docker.Client.Types (Image(DockerImage))
 import qualified Data.Map.Strict as Map
@@ -67,6 +68,7 @@ app stateVar hexFile shutdownHandler connection = do
                 Nothing -> fail $ "Service " <> show serviceName <> " is not defined"
                 Just serviceDefinition -> do
                   ensureBuiltImage serviceDefinition
+                  ensureNetworking serviceDefinition
                   runServiceContainer stateVar serviceDefinition
             return ()
 
@@ -115,6 +117,18 @@ runServiceContainer stateVar (ServiceDefinition name imageName buildContext _ cr
       liftIO $ putMVar stateVar $ State.addContainerId containerId state
       liftIO $ putStrLn $ "Starting " <> Text.unpack name <> "..."
       Docker.startContainer Docker.defaultStartOpts containerId
+
+ensureNetworking :: ServiceDefinition -> Docker.DockerT IO ()
+ensureNetworking (ServiceDefinition _ _ _ _ (Docker.CreateOpts _ _ networkingConfig)) =
+  mapM_ createNetworkWithName networkNames
+  where
+    networkNames = HashMap.keys $ Docker.endpointsConfig networkingConfig
+    createNetworkWithName name = do
+      Docker.createNetwork $
+        (Docker.defaultCreateNetworkOpts name)
+        { Docker.createNetworkCheckDuplicate = True
+        , Docker.createNetworkInternal = False
+        }
 
 ensureBuiltImage :: ServiceDefinition -> Docker.DockerT IO ()
 ensureBuiltImage (ServiceDefinition _ imageName buildContext buildOptions _) = do
@@ -215,6 +229,7 @@ main = do
           Nothing -> fail $ "Messenger service " <> show messengerName <> " is not defined"
           Just messengerDefinition@(ServiceDefinition name imageName buildContext buildOptions createOptions) -> do
             ensureBuiltImage messengerDefinition
+            ensureNetworking messengerDefinition
             runServiceContainer stateVar messengerDefinition
             let messengerHost = "localhost"
             wsClient <- liftIO $ async $ connectToMessenger stateVar messengerHost messengerPort $ app stateVar hexFile shutdownHandler
@@ -222,6 +237,7 @@ main = do
               case Map.lookup serviceName services of
                 Just entryServiceDefinition -> do
                   ensureBuiltImage entryServiceDefinition
+                  ensureNetworking entryServiceDefinition
                   runServiceContainer stateVar entryServiceDefinition
                 Nothing -> fail $ "Init sequence: service " <> show serviceName <> " is not defined"
 
