@@ -25,7 +25,8 @@ import Docker.Client (BuildOpts, defaultBuildOpts,
 import Data.Aeson (FromJSON(parseJSON), (.:), (.:?), (.!=), Value(Object, String))
 import Control.Monad (mzero)
 import Data.Semigroup ((<>))
-import Data.Yaml as Yaml
+import qualified Data.Yaml as Yaml
+import Data.Yaml as Yaml (ParseException(OtherParseException))
 import System.Directory (makeAbsolute)
 import Control.Exception (catch)
 
