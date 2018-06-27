@@ -3,14 +3,15 @@
 
 module HexFile where
 
-import Data.Text (Text, splitOn, unpack)
+import Data.Text (Text, splitOn, unpack, pack)
 import Data.Map.Strict (Map)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
 import Docker.Client (BuildOpts, defaultBuildOpts,
                       CreateOpts(CreateOpts), defaultCreateOpts,
-                      HostConfig, portBindings, networkMode, defaultHostConfig,
+                      HostConfig(HostConfig), portBindings, networkMode, binds, hostConfig, defaultHostConfig,
                       NetworkMode(NetworkNamed),
+                      Bind(Bind), hostSrc,
                       Port,
                       PortBinding(PortBinding), containerPort, portType, hostPorts,
                       HostPort(HostPort),
@@ -24,6 +25,36 @@ import Docker.Client (BuildOpts, defaultBuildOpts,
 import Data.Aeson (FromJSON(parseJSON), (.:), (.:?), (.!=), Value(Object, String))
 import Control.Monad (mzero)
 import Data.Semigroup ((<>))
+import qualified Data.Yaml as Yaml
+import Data.Yaml as Yaml (ParseException(OtherParseException))
+import System.Directory (makeAbsolute)
+import Control.Exception (catch)
+
+decode :: FilePath -> IO (Either ParseException HexFile)
+decode file = do
+  result <- Yaml.decodeFileEither file
+  case result of
+    Right hexFile -> preprocess hexFile
+    Left e -> return $ Left e
+
+preprocess :: HexFile -> IO (Either ParseException HexFile)
+preprocess hexFile =
+  catch
+    (fmap Right . updateHostSrcs makeAbsolutePath $ hexFile)
+    (return . Left . OtherParseException)
+  where
+    makeAbsolutePath = fmap pack . makeAbsolute . unpack
+    updateHostSrcs =
+      updateServices . traverse
+        . updateCreateOptions
+        . updateHostConfig
+        . updateBinds . traverse
+        . updateHostSrc
+    updateServices f s      = (\a -> s { services = a })      <$> f (services s)
+    updateCreateOptions f s = (\a -> s { createOptions = a }) <$> f (createOptions s)
+    updateHostConfig f s    = (\a -> s { hostConfig = a })    <$> f (hostConfig s)
+    updateBinds f s         = (\a -> s { binds = a })         <$> f (binds s)
+    updateHostSrc f s       = (\a -> s { hostSrc = a })       <$> f (hostSrc s)
 
 type ServiceName = Text
 
@@ -92,6 +123,7 @@ instance FromJSON ServiceDefinition where
 
     portMappings <- definition .:? "ports" .!= []
     envVars <- definition .:? "environment" .!= []
+    volumeMappings <- definition .:? "volumes" .!= []
 
     let hexName       = getHexName name
         imageName     = case buildContext of
@@ -100,8 +132,10 @@ instance FromJSON ServiceDefinition where
         buildOptions  = defaultBuildOpts hexName
         createOptions = let portBindings    = mappingToBinding <$> portMappings
                             exposedPorts    = mappingToExposedPort <$> portMappings
+                            binds           = volumeMappings -- not all volumes are binds, but for now we support only binds
                             hostConfig      = defaultHostConfig
                                                 { portBindings
+                                                , binds
                                                 , networkMode = NetworkNamed "hex-network"
                                                 }
                             containerConfig = (defaultContainerConfig imageName)
