@@ -3,6 +3,7 @@
 
 module Main where
 
+import System.IO (hSetBuffering, stdout, BufferMode(LineBuffering))
 import Data.Functor (($>))
 import qualified Data.HashMap.Strict as HashMap
 import qualified Docker.Client as Docker
@@ -117,6 +118,7 @@ runServiceContainer stateVar (ServiceDefinition name imageName buildContext _ cr
       liftIO $ putMVar stateVar $ State.addContainerId containerId state
       liftIO $ putStrLn $ "Starting " <> Text.unpack name <> "..."
       Docker.startContainer Docker.defaultStartOpts containerId
+        <* (liftIO $ putStrLn $ "Started " <> Text.unpack name)
 
 ensureNetworking :: ServiceDefinition -> Docker.DockerT IO ()
 ensureNetworking (ServiceDefinition _ _ _ _ (Docker.CreateOpts _ _ networkingConfig)) =
@@ -216,6 +218,7 @@ waitForExitFlag = takeMVar
 
 main :: IO ()
 main = do
+  hSetBuffering stdout LineBuffering -- needed by tests, they read output line by line
   stateVar <- newMVar State.empty
   exitFlag <- newExitFlag
   let shutdownHandler = shutdown stateVar exitFlag
@@ -240,6 +243,7 @@ main = do
                   ensureNetworking entryServiceDefinition
                   runServiceContainer stateVar entryServiceDefinition
                 Nothing -> fail $ "Init sequence: service " <> show serviceName <> " is not defined"
+            liftIO $ putStrLn "Init sequence complete!"
 
     Left err -> putStrLn $ "Error reading Hexfile: " <> show err
 
