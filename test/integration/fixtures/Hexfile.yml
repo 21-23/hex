@@ -1,0 +1,21 @@
+services:
+  -
+    name: test-service
+    context: ./test-service
+
+  -
+    name: state-service
+    context: ./state-service
+
+  -
+    name: messenger
+    context: ./messenger
+    ports:
+      - "3002:3000"
+
+messenger:
+  service: messenger
+  port: 3002
+
+init-sequence:
+  - test-service
