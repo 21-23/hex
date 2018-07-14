@@ -10,7 +10,7 @@ module HexProcess
 where
 
 import           Data.List                                ( isInfixOf )
-import           Control.Monad                            ( MonadPlus, mzero )
+import           Control.Monad                            ( unless )
 import qualified System.Process.Typed          as TypedProcess
                                                           ( withProcess )
 import           System.Process.Typed              hiding ( withProcess )
@@ -69,13 +69,13 @@ stopIfNotStopped p = getExitCode p >>= \case
 
 waitUntilServiceStarted :: HexProcess -> ServiceType -> IO ()
 waitUntilServiceStarted p service =
-  unless
+  unlessM
     (waitForMessage p $ "Started " ++ show service)
     (fail $ show service ++ " is not started within specified timeout")
 
 waitUntilHexIsStarted :: HexProcess -> IO ()
 waitUntilHexIsStarted p =
-  unless
+  unlessM
     (waitForMessage p "Init sequence complete!")
     (fail "cannot find init sequence in hex output")
 
@@ -90,8 +90,5 @@ waitForMessage p message = checkNextLine
           else checkNextLine
     getLine = timeout (10 * 1000 * 1000) $ hGetLine (getStdout p)
 
-unless :: IO Bool -> IO () -> IO ()
-unless mb error = mb >>= \b ->
-  if b
-    then return ()
-    else error
+unlessM :: (Monad m) => m Bool -> m () -> m ()
+unlessM b f = b >>= flip unless f

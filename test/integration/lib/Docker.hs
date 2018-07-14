@@ -6,9 +6,7 @@ module Docker
   )
 where
 
-import           Control.Monad                            ( when )
 import           Data.ByteString.Lazy.Char8               ( unpack )
-import           Data.List                                ( intercalate )
 import           System.Process.Typed
 
 removeImage :: String -> IO ()
@@ -21,11 +19,10 @@ getPsImages :: IO [String]
 getPsImages = evalProcess "docker ps -a --format '{{.Image}}'"
 
 stopContainersByImage :: [String] -> IO ()
-stopContainersByImage names = do
-  ids <- evalProcess $ "docker ps -a -q " ++ filters
-  when (length ids > 0) $ mapM_ stop ids
+stopContainersByImage names =
+  evalProcess ("docker ps -a -q " ++ filters) >>= mapM_ stop
   where
-    filters = intercalate " " $ nameToFilter <$> names
+    filters = unwords $ nameToFilter <$> names
     nameToFilter name = "--filter 'ancestor=" ++ name ++ "'"
     stop id = do
       execProcess $ "docker stop " ++ id
@@ -35,5 +32,5 @@ execProcess :: String -> IO ()
 execProcess = runProcess_ . setStderr closed . setStdout closed . shell
 
 evalProcess :: String -> IO [String]
-evalProcess p = lines <$> unpack <$> fst <$> readProcess_
+evalProcess p = lines . unpack . fst <$> readProcess_
   (setStdin createPipe $ setStderr closed $ shell p)

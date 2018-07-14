@@ -18,7 +18,7 @@ main = do
   defaultMain =<< testSpec "integration tests" specs
 
 specs :: Spec
-specs = do
+specs =
   before_ (Docker.stopContainersByImage
       [ messenger_service
       , test_service
@@ -32,9 +32,7 @@ specs = do
 
       it "stops containers before quitting" $ do
         HexProcess.runAndStop
-        images <- Docker.getPsImages
-        images `shouldNotContain` [messenger_service]
-        images `shouldNotContain` [test_service]
+        defaultContainersShouldBeStopped
 
       it "builds image if not built" $ do
         Docker.removeImage test_service
@@ -55,10 +53,13 @@ specs = do
         HexProcess.withProcess $ \p -> do
           WebSocketControl.requestShutdown "localhost" 3002
           TypedProcess.waitExitCode p
-        images <- Docker.getPsImages
-        images `shouldNotContain` [messenger_service]
-        images `shouldNotContain` [test_service]
+        defaultContainersShouldBeStopped
+
   where
     messenger_service = "hex_messenger"
     test_service = "hex_test-service"
     state_service = "hex_state-service"
+    defaultContainersShouldBeStopped = do
+      images <- Docker.getPsImages
+      images `shouldNotContain` [messenger_service]
+      images `shouldNotContain` [test_service]

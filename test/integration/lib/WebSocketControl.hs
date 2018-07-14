@@ -44,7 +44,7 @@ import qualified Network.WebSockets            as WebSocket
 
 type UnsignedMessage = ServiceIdentity -> Envelope OutgoingMessage
 
-data IncomingMessage = CheckedIn ServiceIdentity
+newtype IncomingMessage = CheckedIn ServiceIdentity
 
 instance FromJSON IncomingMessage where
   parseJSON (Object message) = do
@@ -93,6 +93,6 @@ signAndSend msg conn = send checkin >> getSignature >>= send . msg
   checkin = Envelope Messenger . CheckIn . SandboxService $ LodashQuickDraw
   send    = WebSocket.sendTextData conn . Aeson.encode
   getSignature =
-    WebSocket.receiveData conn >>= return . Aeson.eitherDecode >>= \case
+    Aeson.eitherDecode <$> WebSocket.receiveData conn >>= \case
       Left  err -> fail err
       Right Envelope { message = CheckedIn identity } -> return identity
