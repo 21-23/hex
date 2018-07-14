@@ -40,9 +40,9 @@ whileRunning = withProcess . const
 withProcess :: (HexProcess -> IO a) -> IO a
 withProcess f = do
   hexConfig <- config <$> getExe <*> getWorkingDir
-  TypedProcess.withProcess hexConfig $ \p -> do
-    waitUntilHexIsStarted p
-    f p <* stopIfNotStopped p
+  TypedProcess.withProcess hexConfig $ \p ->
+    waitUntilHexIsStarted p *> f p <* stopIfNotStopped p
+
  where
   config exe dir = setStdout createPipe
     $ setStderr createPipe
