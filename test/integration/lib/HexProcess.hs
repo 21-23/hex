@@ -67,17 +67,24 @@ stopIfNotStopped p = getExitCode p >>= \case
     waitExitCode p
   Just exitCode -> return exitCode
 
+-- process must be stopped before calling `fail`, because TypedProcess
+-- masks errors until process is done running, which may not be the case
+-- (for example when we're failing because we couldn't find required message in
+-- hex's output in time)
+failHex :: HexProcess -> String -> IO a
+failHex p e = stopIfNotStopped p *> fail e
+
 waitUntilServiceStarted :: HexProcess -> ServiceType -> IO ()
 waitUntilServiceStarted p service =
   unlessM
     (waitForMessage p $ "Started " ++ show service)
-    (fail $ show service ++ " is not started within specified timeout")
+    (failHex p $ show service ++ " is not started within specified timeout")
 
 waitUntilHexIsStarted :: HexProcess -> IO ()
 waitUntilHexIsStarted p =
   unlessM
     (waitForMessage p "Init sequence complete!")
-    (fail "cannot find init sequence in hex output")
+    (failHex p "cannot find init sequence in hex output")
 
 waitForMessage :: HexProcess -> String -> IO Bool
 waitForMessage p message = checkNextLine
