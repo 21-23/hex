@@ -62,7 +62,7 @@ app stateVar hexFile shutdownHandler connection = do
             let request = State.ServiceRequest from serviceType
             putMVar stateVar $ State.addRequest request state
             httpHandler <- Docker.defaultHttpHandler
-            Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $ do
+            Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $ do
               let serviceName        = Text.pack $ show serviceType
                   HexFile {services} = hexFile
               case Map.lookup serviceName services of
@@ -184,7 +184,7 @@ shutdown stateVar exitFlag = do
   -- kill containers
   httpHandler <- Docker.defaultHttpHandler
   state <- readMVar stateVar
-  Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
+  Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $
     for_ (State.containerIds state) stopAndRemove
   putStrLn "All containers have been stopped!"
 
@@ -227,7 +227,7 @@ main = do
   case decodedHexFile of
     Right hexFile@(HexFile services (MessengerDefinition messengerName messengerPort) initSequence) -> do
       httpHandler <- Docker.defaultHttpHandler
-      Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
+      Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $
         case Map.lookup messengerName services of
           Nothing -> fail $ "Messenger service " <> show messengerName <> " is not defined"
           Just messengerDefinition@(ServiceDefinition name imageName buildContext buildOptions createOptions) -> do
