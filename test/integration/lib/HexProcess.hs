@@ -9,8 +9,13 @@ module HexProcess
   )
 where
 
+import           GHC.Conc                                 ( STM
+                                                          , atomically
+                                                          )
+import qualified Data.ByteString.Lazy.Char8    as L8
 import           Data.List                                ( isInfixOf )
 import           Control.Monad                            ( unless )
+import           Control.Exception                        ( handle, throw, SomeException)
 import qualified System.Process.Typed          as TypedProcess
                                                           ( withProcess )
 import           System.Process.Typed              hiding ( withProcess )
@@ -29,7 +34,7 @@ import           System.Exit                              ( ExitCode )
 
 import           ServiceIdentity                          ( ServiceType )
 
-type HexProcess = Process () Handle Handle
+type HexProcess = Process () Handle (STM L8.ByteString)
 
 runAndStop :: IO ()
 runAndStop = whileRunning $ return ()
@@ -41,11 +46,13 @@ withProcess :: (HexProcess -> IO a) -> IO a
 withProcess f = do
   hexConfig <- config <$> getExe <*> getWorkingDir
   TypedProcess.withProcess hexConfig $ \p ->
-    waitUntilHexIsStarted p *> f p <* stopIfNotStopped p
+    handle
+      (checkStderr p)
+      (waitUntilHexIsStarted p *> f p <* stopIfNotStopped p)
 
  where
   config exe dir = setStdout createPipe
-    $ setStderr createPipe
+    $ setStderr byteStringOutput
     $ setWorkingDir dir
     $ proc exe []
 
@@ -59,6 +66,13 @@ withProcess f = do
     if workDirExists
       then return workDir
       else fail $ workDir ++ " does not exists"
+
+checkStderr :: HexProcess -> SomeException -> IO a
+checkStderr p e = do
+  stderr <- L8.unpack <$> atomically (getStderr p)
+  if null stderr
+    then throw e -- if stderr is empty, just rethrow error
+    else failHex p stderr
 
 stopIfNotStopped :: HexProcess -> IO ExitCode
 stopIfNotStopped p = getExitCode p >>= \case
