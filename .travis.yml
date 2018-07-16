@@ -35,6 +35,7 @@ before_install:
 - travis_retry curl -L https://get.haskellstack.org/stable/linux-x86_64.tar.gz | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
 # Tests use alpine as base image for lightweight test containers
 - docker pull alpine:latest
+- docker pull 2123io/arnaux:test1
 
 install:
 # Build dependencies, including those needed for integration tests
