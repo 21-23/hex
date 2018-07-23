@@ -1,3 +1,3 @@
 FROM alpine:latest
 
-CMD ["/bin/bash", "-c", "echo 'state-service'"]
+CMD ["/bin/sh", "-c", "echo 'state-service'"]

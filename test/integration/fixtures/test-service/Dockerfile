@@ -1,3 +1,3 @@
 FROM alpine:latest
 
-CMD ["/bin/bash", "-c", "echo 'test-service'"]
+CMD ["/bin/sh", "-c", "echo 'test-service'"]
