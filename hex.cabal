@@ -56,6 +56,7 @@ executable hex-exe
                      , aeson
                      , async
                      , unix
+                     , conduit-extra
   default-language:    Haskell2010
 
 test-suite hex-test
