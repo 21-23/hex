@@ -3,6 +3,7 @@
 
 module Main where
 
+import System.IO (hSetBuffering, stdout, BufferMode(LineBuffering))
 import Data.Functor (($>))
 import qualified Data.HashMap.Strict as HashMap
 import qualified Docker.Client as Docker
@@ -61,7 +62,7 @@ app stateVar hexFile shutdownHandler connection = do
             let request = State.ServiceRequest from serviceType
             putMVar stateVar $ State.addRequest request state
             httpHandler <- Docker.defaultHttpHandler
-            Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $ do
+            Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $ do
               let serviceName        = Text.pack $ show serviceType
                   HexFile {services} = hexFile
               case Map.lookup serviceName services of
@@ -117,6 +118,7 @@ runServiceContainer stateVar (ServiceDefinition name imageName buildContext _ cr
       liftIO $ putMVar stateVar $ State.addContainerId containerId state
       liftIO $ putStrLn $ "Starting " <> Text.unpack name <> "..."
       Docker.startContainer Docker.defaultStartOpts containerId
+        <* (liftIO $ putStrLn $ "Started " <> Text.unpack name)
 
 ensureNetworking :: ServiceDefinition -> Docker.DockerT IO ()
 ensureNetworking (ServiceDefinition _ _ _ _ (Docker.CreateOpts _ _ networkingConfig)) =
@@ -182,7 +184,7 @@ shutdown stateVar exitFlag = do
   -- kill containers
   httpHandler <- Docker.defaultHttpHandler
   state <- readMVar stateVar
-  Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
+  Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $
     for_ (State.containerIds state) stopAndRemove
   putStrLn "All containers have been stopped!"
 
@@ -216,6 +218,7 @@ waitForExitFlag = takeMVar
 
 main :: IO ()
 main = do
+  hSetBuffering stdout LineBuffering -- needed by tests, they read output line by line
   stateVar <- newMVar State.empty
   exitFlag <- newExitFlag
   let shutdownHandler = shutdown stateVar exitFlag
@@ -224,7 +227,7 @@ main = do
   case decodedHexFile of
     Right hexFile@(HexFile services (MessengerDefinition messengerName messengerPort) initSequence) -> do
       httpHandler <- Docker.defaultHttpHandler
-      Docker.runDockerT (Docker.defaultClientOpts { Docker.baseUrl = "http://127.0.0.1:2376" } , httpHandler) $
+      Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $
         case Map.lookup messengerName services of
           Nothing -> fail $ "Messenger service " <> show messengerName <> " is not defined"
           Just messengerDefinition@(ServiceDefinition name imageName buildContext buildOptions createOptions) -> do
@@ -240,6 +243,7 @@ main = do
                   ensureNetworking entryServiceDefinition
                   runServiceContainer stateVar entryServiceDefinition
                 Nothing -> fail $ "Init sequence: service " <> show serviceName <> " is not defined"
+            liftIO $ putStrLn "Init sequence complete!"
 
     Left err -> putStrLn $ "Error reading Hexfile: " <> show err
 
