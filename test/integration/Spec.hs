@@ -22,6 +22,7 @@ specs =
   before_ (Docker.stopContainersByImage
       [ messenger_service
       , test_service
+      , test_image
       , state_service]) $ do
 
     describe "running containers" $ do
@@ -29,6 +30,7 @@ specs =
         images <- HexProcess.whileRunning Docker.getPsImages
         images `shouldContain` [messenger_service]
         images `shouldContain` [test_service]
+        images `shouldContain` [test_image]
 
       it "stops containers before quitting" $ do
         HexProcess.runAndStop
@@ -40,6 +42,13 @@ specs =
         builtImages   <- Docker.getBuiltImages
         runningImages `shouldContain` [test_service]
         builtImages   `shouldContain` [test_service]
+
+      it "pulls image if not pulled" $ do
+        Docker.removeImage test_image
+        runningImages <- HexProcess.whileRunning Docker.getPsImages
+        builtImages   <- Docker.getBuiltImages
+        runningImages `shouldContain` [test_image]
+        builtImages   `shouldContain` [test_image]
 
     describe "controlling via websockets" $ do
       it "starts requested container" $ do
@@ -58,8 +67,10 @@ specs =
   where
     messenger_service = "hex_messenger"
     test_service = "hex_test-service"
+    test_image = "alpine"
     state_service = "hex_state-service"
     defaultContainersShouldBeStopped = do
       images <- Docker.getPsImages
       images `shouldNotContain` [messenger_service]
       images `shouldNotContain` [test_service]
+      images `shouldNotContain` [test_image]

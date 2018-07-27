@@ -3,6 +3,7 @@
 
 module Main where
 
+import qualified Data.Conduit.Binary    as Conduit
 import System.IO (hSetBuffering, stdout, BufferMode(LineBuffering))
 import Data.Functor (($>))
 import qualified Data.HashMap.Strict as HashMap
@@ -148,8 +149,10 @@ ensureBuiltImage (ServiceDefinition _ imageName buildContext buildOptions _) = d
             Docker.buildImageFromDockerfile buildOptions basePath
             return ()
         Image name ->
-          when (Maybe.isNothing $ findImage name) $
-            liftIO $ putStrLn $ "Service image " <> show name <> " is not pulled"
+          when (Maybe.isNothing $ findImage name) $ do
+            liftIO $ putStrLn $ "Service image " <> show name <> " is not pulled, pulling..."
+            Docker.pullImage name "latest" Conduit.sinkLbs
+            return ()
 
 stopAndRemove :: ServiceDefinition -> Docker.DockerT IO ()
 stopAndRemove (ServiceDefinition _ name buildContext buildOptions _) = do

@@ -3,6 +3,9 @@ services:
     name: test-service
     context: ./test-service
 
+  - name: test-image
+    image: alpine
+
   -
     name: state-service
     context: ./state-service
@@ -19,3 +22,4 @@ messenger:
 
 init-sequence:
   - test-service
+  - test-image
