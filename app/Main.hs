@@ -16,7 +16,7 @@ import Control.Monad.IO.Class (liftIO)
 import qualified Data.Text as Text
 import qualified Data.List as List
 import qualified Network.WebSockets as WebSocket
-import           Control.Exception (catch)
+import           Control.Exception (SomeException, catch)
 import           Control.Concurrent.Suspend.Lifted (msDelay, suspend)
 import           Control.Monad (forever, when)
 import qualified Data.Aeson as Aeson
@@ -90,23 +90,18 @@ connectToMessenger :: MVar State -> String -> Int -> WebSocket.ClientApp () -> I
 connectToMessenger stateVar messengerHost messengerPort clientApp =
   catch
     (WebSocket.runClient messengerHost messengerPort "/" clientApp)
-    exceptionHandler
+    reconnectUnlessShutdown
   where
-    exceptionHandler e@(WebSocket.CloseRequest _ _) = reconnectUnlessShutdown e
-    exceptionHandler e@(WebSocket.ConnectionClosed) = reconnectUnlessShutdown e
-    exceptionHandler e = reconnect e
-
+    reconnectUnlessShutdown :: SomeException -> IO ()
     reconnectUnlessShutdown exception = do
       ws <- State.websocket <$> readMVar stateVar
       case ws of
         State.ConnectionClosed -> return ()
-        _ -> reconnect exception
-
-    reconnect exception = do
-      putStrLn $ "Websocket error: " <> show (exception :: WebSocket.ConnectionException)
-      suspend $ msDelay 500
-      putStrLn "Reconnecting..."
-      connectToMessenger stateVar messengerHost messengerPort clientApp
+        _ -> do
+          putStrLn $ "Websocket error: " <> show exception
+          suspend $ msDelay 500
+          putStrLn "Reconnecting..."
+          connectToMessenger stateVar messengerHost messengerPort clientApp
 
 runServiceContainer :: MVar State -> ServiceDefinition -> Docker.DockerT IO (Either Docker.DockerError ())
 runServiceContainer stateVar (ServiceDefinition name imageName buildContext _ createOptions) = do
@@ -179,11 +174,13 @@ shutdown stateVar exitFlag = do
   -- close websocket connection
   modifyMVar_ stateVar $ \state -> do
     case State.websocket state of
+      State.NotConnected ->
+        return $ State.setConnectionClosed state
       State.Connected connection -> do
         WebSocket.sendClose connection ("Hex is shutting down. See ya, Arnaux" :: Text.Text)
         return $ State.setConnectionClosed state
       _ -> return state
-    
+
   -- kill containers
   httpHandler <- Docker.defaultHttpHandler
   state <- readMVar stateVar
