@@ -6,6 +6,7 @@ module Docker
   )
 where
 
+import           Data.Functor                             ( ($>) )
 import           Data.ByteString.Lazy.Char8               ( unpack )
 import           System.Process.Typed
 
@@ -29,8 +30,8 @@ stopContainersByImage names =
       execProcess $ "docker rm " ++ id
 
 execProcess :: String -> IO ()
-execProcess = runProcess_ . setStderr closed . setStdout closed . shell
+execProcess p = readProcess_ (shell p) $> ()
 
 evalProcess :: String -> IO [String]
-evalProcess p = lines . unpack . fst <$> readProcess_
-  (setStdin createPipe $ setStderr closed $ shell p)
+evalProcess p = lines . unpack . fst <$> readProcess_ (shell p)
+
