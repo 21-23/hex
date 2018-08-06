@@ -31,30 +31,7 @@ import System.Directory (makeAbsolute)
 import Control.Exception (catch)
 
 decode :: FilePath -> IO (Either ParseException HexFile)
-decode file = do
-  result <- Yaml.decodeFileEither file
-  case result of
-    Right hexFile -> preprocess hexFile
-    Left e -> return $ Left e
-
-preprocess :: HexFile -> IO (Either ParseException HexFile)
-preprocess hexFile =
-  catch
-    (fmap Right . updateHostSrcs makeAbsolutePath $ hexFile)
-    (return . Left . OtherParseException)
-  where
-    makeAbsolutePath = fmap pack . makeAbsolute . unpack
-    updateHostSrcs =
-      updateServices . traverse
-        . updateCreateOptions
-        . updateHostConfig
-        . updateBinds . traverse
-        . updateHostSrc
-    updateServices f s      = (\a -> s { services = a })      <$> f (services s)
-    updateCreateOptions f s = (\a -> s { createOptions = a }) <$> f (createOptions s)
-    updateHostConfig f s    = (\a -> s { hostConfig = a })    <$> f (hostConfig s)
-    updateBinds f s         = (\a -> s { binds = a })         <$> f (binds s)
-    updateHostSrc f s       = (\a -> s { hostSrc = a })       <$> f (hostSrc s)
+decode = Yaml.decodeFileEither
 
 type ServiceName = Text
 
@@ -132,7 +109,7 @@ instance FromJSON ServiceDefinition where
         buildOptions  = defaultBuildOpts hexName
         createOptions = let portBindings    = mappingToBinding <$> portMappings
                             exposedPorts    = mappingToExposedPort <$> portMappings
-                            binds           = volumeMappings -- not all volumes are binds, but for now we support only binds
+                            binds           = volumeMappings
                             hostConfig      = defaultHostConfig
                                                 { portBindings
                                                 , binds
