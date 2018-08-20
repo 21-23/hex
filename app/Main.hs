@@ -85,9 +85,10 @@ app stateVar hexFile shutdownHandler connection = do
               Nothing -> putMVar stateVar state
 
           Shutdown -> async shutdownHandler $> ()
-            
+
 connectToMessenger :: MVar State -> String -> Int -> WebSocket.ClientApp () -> IO ()
-connectToMessenger stateVar messengerHost messengerPort clientApp =
+connectToMessenger stateVar messengerHost messengerPort clientApp = do
+  putStrLn $ "Connecting to " ++ messengerHost ++ ":" ++ show messengerPort
   catch
     (WebSocket.runClient messengerHost messengerPort "/" clientApp)
     reconnectUnlessShutdown
@@ -234,7 +235,7 @@ main = do
             ensureBuiltImage messengerDefinition
             ensureNetworking messengerDefinition
             runServiceContainer stateVar messengerDefinition
-            let messengerHost = "localhost"
+            let messengerHost = Text.unpack messengerName
             wsClient <- liftIO $ async $ connectToMessenger stateVar messengerHost messengerPort $ app stateVar hexFile shutdownHandler
             for_ initSequence $ \serviceName ->
               case Map.lookup serviceName services of
