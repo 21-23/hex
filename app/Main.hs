@@ -49,7 +49,7 @@ dockerDefaultUnixHandler = Docker.unixHttpHandler "/var/run/docker.sock"
 app :: MVar State -> HexFile -> IO () -> WebSocket.ClientApp ()
 app stateVar hexFile shutdownHandler connection = do
   -- save connection
-  modifyMVar_ stateVar $ return . (State.setConnecton connection)
+  modifyMVar_ stateVar $ return . State.setConnecton connection
 
   catch
     (WebSocket.sendTextData connection $ Aeson.encode $ Envelope Messenger (CheckIn ContainerService))
@@ -118,14 +118,14 @@ runServiceContainer stateVar (ServiceDefinition name imageName buildContext _ cr
       liftIO $ putMVar stateVar $ State.addContainerId containerId state
       liftIO $ putStrLn $ "Starting " <> Text.unpack name <> "..."
       Docker.startContainer Docker.defaultStartOpts containerId
-        <* (liftIO $ putStrLn $ "Started " <> Text.unpack name)
+        <* liftIO (putStrLn $ "Started " <> Text.unpack name)
 
 ensureNetworking :: ServiceDefinition -> Docker.DockerT IO ()
 ensureNetworking (ServiceDefinition _ _ _ _ (Docker.CreateOpts _ _ networkingConfig)) =
   mapM_ createNetworkWithName networkNames
   where
     networkNames = HashMap.keys $ Docker.endpointsConfig networkingConfig
-    createNetworkWithName name = do
+    createNetworkWithName name =
       Docker.createNetwork $
         (Docker.defaultCreateNetworkOpts name)
         { Docker.createNetworkCheckDuplicate = True
@@ -176,7 +176,7 @@ shutdown stateVar exitFlag = do
   putStrLn "Shutting down..."
 
   -- close websocket connection
-  modifyMVar_ stateVar $ \state -> do
+  modifyMVar_ stateVar $ \state ->
     case State.websocket state of
       State.NotConnected ->
         return $ State.setConnectionClosed state
