@@ -165,7 +165,7 @@ stopAndRemove (ServiceDefinition _ name buildContext buildOptions _) = do
         Just Docker.Container {Docker.containerId} -> do
           liftIO $ putStrLn $ "A container for " <> show name <> " already exists, stopping & removing..."
           Docker.stopContainer Docker.DefaultTimeout containerId
-          result <- Docker.deleteContainer Docker.defaultDeleteOpts containerId
+          result <- Docker.deleteContainer Docker.defaultContainerDeleteOpts containerId
           case result of
             Right _  -> liftIO $ putStrLn "Cleaned up successfully"
             Left err -> liftIO $ print err
@@ -199,7 +199,7 @@ shutdown stateVar exitFlag = do
       liftIO $ putStrLn $ "Stopping container " <> show containerId <> "..."
       Docker.stopContainer Docker.DefaultTimeout containerId
       liftIO $ putStrLn $ "Stopped successfully, now removing the container " <> show containerId <> "..."
-      result <- Docker.deleteContainer Docker.defaultDeleteOpts containerId
+      result <- Docker.deleteContainer Docker.defaultContainerDeleteOpts containerId
       case result of
         Left err -> liftIO $ print err
         Right _  -> liftIO $ putStrLn $ "Cleaned up successfully: " <> show containerId
