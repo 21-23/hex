@@ -37,13 +37,10 @@ resolver: lts-9.17
 # will not be run. This is useful for tweaking upstream packages.
 packages:
 - .
-- location:
-    git: https://github.com/denibertovic/docker-hs.git
-    commit: 940eb34fe2a2bbc8b223d0b9e361e274c6296c2b
-  extra-dep: true
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
+  - docker-0.6.0.0
   - suspend-0.2.0.0
   - timers-0.2.0.3
 

@@ -43,11 +43,14 @@ import ServiceIdentity (ServiceType(ContainerService),
 import State (State)
 import qualified State
 
+dockerDefaultUnixHandler :: IO (Docker.HttpHandler IO)
+dockerDefaultUnixHandler = Docker.unixHttpHandler "/var/run/docker.sock"
+
 app :: MVar State -> HexFile -> IO () -> WebSocket.ClientApp ()
 app stateVar hexFile shutdownHandler connection = do
   -- save connection
-  modifyMVar_ stateVar $ return . (State.setConnecton connection)
- 
+  modifyMVar_ stateVar $ return . State.setConnecton connection
+
   catch
     (WebSocket.sendTextData connection $ Aeson.encode $ Envelope Messenger (CheckIn ContainerService))
     (\exception -> putStrLn $ "Whoa " <> show (exception :: WebSocket.ConnectionException))
@@ -62,7 +65,7 @@ app stateVar hexFile shutdownHandler connection = do
             state <- takeMVar stateVar
             let request = State.ServiceRequest from serviceType
             putMVar stateVar $ State.addRequest request state
-            httpHandler <- Docker.defaultHttpHandler
+            httpHandler <- dockerDefaultUnixHandler
             Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $ do
               let serviceName        = Text.pack $ show serviceType
                   HexFile {services} = hexFile
@@ -85,9 +88,10 @@ app stateVar hexFile shutdownHandler connection = do
               Nothing -> putMVar stateVar state
 
           Shutdown -> async shutdownHandler $> ()
-            
+
 connectToMessenger :: MVar State -> String -> Int -> WebSocket.ClientApp () -> IO ()
-connectToMessenger stateVar messengerHost messengerPort clientApp =
+connectToMessenger stateVar messengerHost messengerPort clientApp = do
+  putStrLn $ "Connecting to " ++ messengerHost ++ ":" ++ show messengerPort
   catch
     (WebSocket.runClient messengerHost messengerPort "/" clientApp)
     reconnectUnlessShutdown
@@ -114,14 +118,14 @@ runServiceContainer stateVar (ServiceDefinition name imageName buildContext _ cr
       liftIO $ putMVar stateVar $ State.addContainerId containerId state
       liftIO $ putStrLn $ "Starting " <> Text.unpack name <> "..."
       Docker.startContainer Docker.defaultStartOpts containerId
-        <* (liftIO $ putStrLn $ "Started " <> Text.unpack name)
+        <* liftIO (putStrLn $ "Started " <> Text.unpack name)
 
 ensureNetworking :: ServiceDefinition -> Docker.DockerT IO ()
 ensureNetworking (ServiceDefinition _ _ _ _ (Docker.CreateOpts _ _ networkingConfig)) =
   mapM_ createNetworkWithName networkNames
   where
     networkNames = HashMap.keys $ Docker.endpointsConfig networkingConfig
-    createNetworkWithName name = do
+    createNetworkWithName name =
       Docker.createNetwork $
         (Docker.defaultCreateNetworkOpts name)
         { Docker.createNetworkCheckDuplicate = True
@@ -161,7 +165,7 @@ stopAndRemove (ServiceDefinition _ name buildContext buildOptions _) = do
         Just Docker.Container {Docker.containerId} -> do
           liftIO $ putStrLn $ "A container for " <> show name <> " already exists, stopping & removing..."
           Docker.stopContainer Docker.DefaultTimeout containerId
-          result <- Docker.deleteContainer Docker.defaultDeleteOpts containerId
+          result <- Docker.deleteContainer Docker.defaultContainerDeleteOpts containerId
           case result of
             Right _  -> liftIO $ putStrLn "Cleaned up successfully"
             Left err -> liftIO $ print err
@@ -172,7 +176,7 @@ shutdown stateVar exitFlag = do
   putStrLn "Shutting down..."
 
   -- close websocket connection
-  modifyMVar_ stateVar $ \state -> do
+  modifyMVar_ stateVar $ \state ->
     case State.websocket state of
       State.NotConnected ->
         return $ State.setConnectionClosed state
@@ -182,7 +186,7 @@ shutdown stateVar exitFlag = do
       _ -> return state
 
   -- kill containers
-  httpHandler <- Docker.defaultHttpHandler
+  httpHandler <- dockerDefaultUnixHandler
   state <- readMVar stateVar
   Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $
     for_ (State.containerIds state) stopAndRemove
@@ -195,7 +199,7 @@ shutdown stateVar exitFlag = do
       liftIO $ putStrLn $ "Stopping container " <> show containerId <> "..."
       Docker.stopContainer Docker.DefaultTimeout containerId
       liftIO $ putStrLn $ "Stopped successfully, now removing the container " <> show containerId <> "..."
-      result <- Docker.deleteContainer Docker.defaultDeleteOpts containerId
+      result <- Docker.deleteContainer Docker.defaultContainerDeleteOpts containerId
       case result of
         Left err -> liftIO $ print err
         Right _  -> liftIO $ putStrLn $ "Cleaned up successfully: " <> show containerId
@@ -225,8 +229,8 @@ main = do
   setupInterruptionHandlers shutdownHandler
   decodedHexFile <- HexFile.decode "./Hexfile.yml"
   case decodedHexFile of
-    Right hexFile@(HexFile services (MessengerDefinition messengerName messengerPort) initSequence) -> do
-      httpHandler <- Docker.defaultHttpHandler
+    Right hexFile@(HexFile services (MessengerDefinition messengerName messengerHost messengerPort) initSequence) -> do
+      httpHandler <- dockerDefaultUnixHandler
       Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $
         case Map.lookup messengerName services of
           Nothing -> fail $ "Messenger service " <> show messengerName <> " is not defined"
@@ -234,7 +238,6 @@ main = do
             ensureBuiltImage messengerDefinition
             ensureNetworking messengerDefinition
             runServiceContainer stateVar messengerDefinition
-            let messengerHost = "localhost"
             wsClient <- liftIO $ async $ connectToMessenger stateVar messengerHost messengerPort $ app stateVar hexFile shutdownHandler
             for_ initSequence $ \serviceName ->
               case Map.lookup serviceName services of
