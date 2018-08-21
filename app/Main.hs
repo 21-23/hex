@@ -229,7 +229,7 @@ main = do
   setupInterruptionHandlers shutdownHandler
   decodedHexFile <- HexFile.decode "./Hexfile.yml"
   case decodedHexFile of
-    Right hexFile@(HexFile services (MessengerDefinition messengerName messengerPort) initSequence) -> do
+    Right hexFile@(HexFile services (MessengerDefinition messengerName messengerHost messengerPort) initSequence) -> do
       httpHandler <- dockerDefaultUnixHandler
       Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $
         case Map.lookup messengerName services of
@@ -238,7 +238,6 @@ main = do
             ensureBuiltImage messengerDefinition
             ensureNetworking messengerDefinition
             runServiceContainer stateVar messengerDefinition
-            let messengerHost = Text.unpack messengerName
             wsClient <- liftIO $ async $ connectToMessenger stateVar messengerHost messengerPort $ app stateVar hexFile shutdownHandler
             for_ initSequence $ \serviceName ->
               case Map.lookup serviceName services of

@@ -130,15 +130,17 @@ instance FromJSON ServiceDefinition where
   parseJSON _ = mzero
 
 data MessengerDefinition = MessengerDefinition
-  { service :: ServiceName
-  , port    :: Int
+  { service       :: ServiceName
+  , messengerHost :: String
+  , messengerPort :: Int
   }
 
 instance FromJSON MessengerDefinition where
   parseJSON (Object definition) = do
     service <- definition .: "service"
     port <- definition .: "port"
-    return $ MessengerDefinition service port
+    host <- definition .: "host"
+    return $ MessengerDefinition service host port
   parseJSON _ = mzero
 
 data HexFile = HexFile
