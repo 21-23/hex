@@ -40,7 +40,7 @@ library
 executable hex-exe
   hs-source-dirs:      app
   main-is:             Main.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N -Wall -Wmissing-import-lists -Wmissing-exported-signatures -Wincomplete-uni-patterns -Wincomplete-record-updates -Widentities -Wredundant-constraints
   build-depends:       base
                      , hex
                      , yaml -any
