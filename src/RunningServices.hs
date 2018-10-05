@@ -1,8 +1,8 @@
 module RunningServices
   ( RunningServices
   , empty
-  , addRequest
-  , fulfillRequest
+  , addStarted
+  , confirmRunning
   , getContainerIDs
   )
 where
@@ -19,7 +19,7 @@ import           ServiceIdentity                          ( ServiceIdentity
 
 type RunningServices = Set RunningService
 
-data Status = Requested | Running deriving (Eq, Show)
+data Status = Started | Running deriving (Eq, Show)
 
 data RunningService = RunningService
   { status :: Status
@@ -46,16 +46,16 @@ toDockerCID (ContainerID cid) = fromJust $ Docker.toContainerID cid
 empty :: RunningServices
 empty = Set.empty
 
-addRequest
+addStarted
   :: ServiceIdentity
   -> ServiceType
   -> Docker.ContainerID
   -> RunningServices
   -> RunningServices
-addRequest si st cid = Set.insert rs
+addStarted si st cid = Set.insert rs
  where
   rs = RunningService
-    { status       = Requested
+    { status       = Started
     , serviceType  = st
     , containerID  = fromDockerCID cid
     , _requestedBy = si
@@ -63,10 +63,9 @@ addRequest si st cid = Set.insert rs
 
 -- NOTE: will set `Running` status to all matching service types
 -- TODO: identify services by something more reliable, like docker container id
-fulfillRequest :: ServiceType -> RunningServices -> RunningServices
-fulfillRequest st = Set.map setRunning
- where
-  setRunning s = if serviceType s == st then s { status = Running } else s
+confirmRunning :: ServiceType -> RunningServices -> RunningServices
+confirmRunning st =
+  Set.map $ \s -> if serviceType s == st then s { status = Running } else s
 
 getContainerIDs :: RunningServices -> [Docker.ContainerID]
 getContainerIDs = fmap (toDockerCID . containerID) . Set.toList
