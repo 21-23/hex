@@ -3,6 +3,7 @@
 
 module HexFile where
 
+import qualified Data.Vector as Vector
 import Data.Text (Text, splitOn, unpack, pack)
 import Data.Map.Strict (Map)
 import qualified Data.HashMap.Strict as HashMap
@@ -22,11 +23,11 @@ import Docker.Client (BuildOpts, defaultBuildOpts,
                       EndpointConfig(EndpointConfig),
                       NetworkingConfig(NetworkingConfig), endpointsConfig,
                       buildDockerfileName)
-import Data.Aeson (FromJSON(parseJSON), (.:), (.:?), (.!=), Value(Object, String))
+import Data.Aeson (FromJSON(parseJSON), (.:), (.:?), (.!=), Value(Object, Array, String))
 import Control.Monad (mzero)
 import Data.Semigroup ((<>))
 import qualified Data.Yaml as Yaml
-import Data.Yaml as Yaml (ParseException(OtherParseException))
+import Data.Yaml as Yaml (Parser, ParseException(OtherParseException))
 import System.Directory (makeAbsolute)
 import Control.Exception (catch)
 
@@ -130,31 +131,47 @@ instance FromJSON ServiceDefinition where
   parseJSON _ = mzero
 
 data MessengerDefinition = MessengerDefinition
-  { service       :: ServiceName
+  { service       :: ServiceDefinition
   , messengerHost :: String
   , messengerPort :: Int
   }
 
-instance FromJSON MessengerDefinition where
-  parseJSON (Object definition) = do
-    service <- definition .: "service"
+parseMessenger :: Map ServiceName ServiceDefinition -> Value -> Parser MessengerDefinition
+parseMessenger knownServices (Object definition) = do
+    service <- lookupDefinition knownServices =<< definition .: "service"
     port <- definition .: "port"
     host <- definition .: "host"
     return $ MessengerDefinition service host port
-  parseJSON _ = mzero
+parseMessenger _ _ = mzero
 
 data HexFile = HexFile
   { services     :: Map ServiceName ServiceDefinition
   , messenger    :: MessengerDefinition
-  , initSequence :: [ServiceName]
+  , initSequence :: [ServiceDefinition]
   }
 
 instance FromJSON HexFile where
   parseJSON (Object hexFile) = do
-    serviceList <- hexFile .: "services"
-    messenger <- hexFile .: "messenger"
-    initSequence <- hexFile .: "init-sequence"
-    let makeTuples definition@ServiceDefinition{name} = (name, definition)
-        services = Map.fromList $ makeTuples <$> serviceList
+    services <- Map.fromList . fmap makeTuples <$> hexFile .: "services"
+    messenger <- parseMessenger services =<< hexFile .: "messenger"
+    initSequence <- parseInitSequence services =<< hexFile .: "init-sequence"
     return $ HexFile services messenger initSequence
+    where
+      makeTuples definition@ServiceDefinition{name} = (name, definition)
   parseJSON _ = mzero
+
+parseInitSequence :: Map ServiceName ServiceDefinition -> Value -> Parser [ServiceDefinition]
+parseInitSequence knownServices (Array names) =
+  traverse parseService (Vector.toList names)
+ where
+  parseService :: Value -> Parser ServiceDefinition
+  parseService v = do
+    name <- parseJSON v
+    lookupDefinition knownServices name
+parseInitSequence _ _ = mzero
+
+lookupDefinition :: Map ServiceName ServiceDefinition -> ServiceName -> Parser ServiceDefinition
+lookupDefinition knownServices name =
+  case Map.lookup name knownServices of
+    Nothing -> fail $ "Required service `" ++ unpack name ++ "` was not found in `services` section"
+    Just sd -> pure sd
