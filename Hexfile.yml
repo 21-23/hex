@@ -41,7 +41,7 @@ services:
       - LOG_DBURI=mongodb://mongo-logs/qd-logs
     ports:
       - "3000:3000"
-      - "3001:3001"
+      - "3010:3001"
   -
     name: sandbox-service:cssqd
     context: ../qd-platform/zandbak-service
