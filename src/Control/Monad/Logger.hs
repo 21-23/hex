@@ -7,6 +7,7 @@ where
 
 import           Control.Monad.Trans                      ( lift )
 import           Control.Monad.Reader                     ( ReaderT )
+import           Control.Monad.Except                     ( ExceptT )
 import           Docker.Client                            ( DockerT )
 
 import           System.IO                                ( hPutStrLn
@@ -26,5 +27,9 @@ instance MonadLogger m => MonadLogger (ReaderT r m) where
   logError = lift . logError
 
 instance MonadLogger m => MonadLogger (DockerT m) where
+  logInfo = lift . logInfo
+  logError = lift . logError
+
+instance MonadLogger m => MonadLogger (ExceptT e m) where
   logInfo = lift . logInfo
   logError = lift . logError

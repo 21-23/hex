@@ -1,5 +1,6 @@
 module Control.Monad.WebSocket
   ( MonadWebSocket
+  , ClientApp
   , sendTextData
   , receiveData
   , runClient
@@ -20,10 +21,12 @@ import           Network.WebSockets                       ( Connection
                                                           , WebSocketsData
                                                           )
 
+type ClientApp m a = Connection -> m a
+
 class Monad m => MonadWebSocket m where
   sendTextData :: WebSocketsData a => Connection -> a -> m ()
   receiveData :: WebSocketsData a => Connection -> m a
-  runClient :: String -> Int -> String -> (Connection -> m a) -> m a
+  runClient :: String -> Int -> String -> ClientApp m a -> m a
 
 instance MonadWebSocket m => MonadWebSocket (ReaderT r m) where
   sendTextData conn d = lift $ sendTextData conn d

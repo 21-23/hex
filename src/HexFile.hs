@@ -31,8 +31,10 @@ import Data.Yaml as Yaml (Parser, ParseException(OtherParseException))
 import System.Directory (makeAbsolute)
 import Control.Exception (catch)
 
-decode :: FilePath -> IO (Either ParseException HexFile)
-decode = Yaml.decodeFileEither
+type HexFileParseError = ParseException
+
+parse :: FilePath -> IO (Either HexFileParseError HexFile)
+parse = Yaml.decodeFileEither
 
 type ServiceName = Text
 
@@ -131,7 +133,7 @@ instance FromJSON ServiceDefinition where
   parseJSON _ = mzero
 
 data MessengerDefinition = MessengerDefinition
-  { service       :: ServiceDefinition
+  { messengerService :: ServiceDefinition
   , messengerHost :: String
   , messengerPort :: Int
   }

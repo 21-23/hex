@@ -20,11 +20,17 @@ description:         Please see the README on Github at <https://github.com/gith
 library
   hs-source-dirs:      src
   exposed-modules:     HexFile
+                     , App
                      , Envelope
                      , Message
                      , Game
                      , ServiceIdentity
                      , State
+                     , Control.Monad.Async
+                     , Control.Monad.Docker
+                     , Control.Monad.Logger
+                     , Control.Monad.WebSocket
+                     , RunningServices
   build-depends:       base >= 4.7 && < 5
                      , containers -any
                      , aeson -any
@@ -35,6 +41,14 @@ library
                      , unordered-containers -any
                      , websockets
                      , directory
+                     , bytestring
+                     , conduit
+                     , mtl
+                     , exceptions
+                     , conduit-extra
+                     , lifted-async
+                     , vector
+                     , http-types
   default-language:    Haskell2010
 
 executable hex-exe
@@ -55,8 +69,11 @@ executable hex-exe
                      , suspend
                      , aeson
                      , async
+                     , lifted-async
+                     , exceptions
                      , unix
                      , conduit-extra
+                     , mtl
   default-language:    Haskell2010
 
 test-suite hex-test
