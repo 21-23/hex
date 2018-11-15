@@ -2,7 +2,8 @@
 
 module Control.Monad.Docker
   ( MonadDocker
-  , ignoreDockerError
+  , DockerResult
+  , dockerError
   , listImages
   , buildImageFromDockerfile
   , pullImage
@@ -16,14 +17,16 @@ module Control.Monad.Docker
 where
 
 import           Control.Monad.Trans                      ( lift )
-import           Control.Monad.Reader                     ( ReaderT)
+import           Control.Monad.Reader                     ( ReaderT )
 import           Control.Monad.Except                     ( ExceptT(ExceptT)
                                                           , catchError
+                                                          , throwError
                                                           , mapExceptT
                                                           )
 import           Control.Monad.Catch                      ( MonadMask )
 import           Control.Monad.IO.Class                   ( MonadIO )
 
+import           Data.Semigroup                           ( (<>) )
 import           Data.Text                                ( Text )
 import           Data.ByteString.Lazy                     ( ByteString )
 import           Data.Conduit.Binary                      ( sinkLbs )
@@ -46,21 +49,26 @@ import           Docker.Client                            ( DockerT
                                                           , NetworkID
                                                           )
 
-ignoreDockerError :: Monad m => ExceptT DockerError m () -> ExceptT DockerError m ()
-ignoreDockerError x = catchError x . const . lift . pure $ ()
+-- ignoreDockerError :: Monad m => DockerResult m () -> DockerResult m ()
+-- ignoreDockerError x = catchError x . const . lift . pure $ ()
+
+type DockerResult m a = ExceptT DockerError m a
+
+dockerError :: (Monad m) => Text -> DockerResult m a
+dockerError = throwError . Docker.GenericDockerError
 
 class Monad m => MonadDocker m where
-  listImages :: ListOpts -> ExceptT DockerError m [Image]
-  buildImageFromDockerfile :: BuildOpts -> FilePath -> ExceptT DockerError m ()
-  pullImage :: Text -> Tag -> ExceptT DockerError m ByteString
+  listImages :: ListOpts -> DockerResult m [Image]
+  buildImageFromDockerfile :: BuildOpts -> FilePath -> DockerResult m ()
+  pullImage :: Text -> Tag -> DockerResult m ByteString
 
-  listContainers :: ListOpts -> ExceptT DockerError m [Container]
-  createContainer :: CreateOpts -> Maybe ContainerName -> ExceptT DockerError m ContainerID
-  startContainer :: StartOpts -> ContainerID -> ExceptT DockerError m ()
-  stopContainer :: Timeout -> ContainerID -> ExceptT DockerError m ()
-  deleteContainer :: ContainerDeleteOpts -> ContainerID -> ExceptT DockerError m ()
+  listContainers :: ListOpts -> DockerResult m [Container]
+  createContainer :: CreateOpts -> Maybe ContainerName -> DockerResult m ContainerID
+  startContainer :: StartOpts -> ContainerID -> DockerResult m ()
+  stopContainer :: Timeout -> ContainerID -> DockerResult m ()
+  deleteContainer :: ContainerDeleteOpts -> ContainerID -> DockerResult m ()
 
-  createNetwork :: CreateNetworkOpts -> ExceptT DockerError m NetworkID
+  createNetwork :: CreateNetworkOpts -> DockerResult m NetworkID
 
 instance MonadDocker m => MonadDocker (ReaderT r m) where
   listImages = mapExceptT lift . listImages
@@ -76,18 +84,21 @@ instance MonadDocker m => MonadDocker (ReaderT r m) where
   createNetwork = mapExceptT lift . createNetwork
 
 instance (MonadIO m, MonadMask m) => MonadDocker (DockerT m) where
-  listImages = const $ ExceptT $ pure $ Left $ Docker.GenericDockerError "whops, cannot listImages"
-  -- listImages = ExceptT . Docker.listImages
-  -- buildImageFromDockerfile = ExceptT $ const $ const $ pure $ Left $ Docker.GenericDockerError "whoops, cannot build image"
+  -- listImages _ = dockerError "cannot list images"
+  listImages = ExceptT . Docker.listImages
+  -- buildImageFromDockerfile _ _ = dockerError "whoops, cannot build image"
   buildImageFromDockerfile opts path = ExceptT $ Docker.buildImageFromDockerfile opts path
   pullImage name tag = ExceptT $ Docker.pullImage name tag sinkLbs
 
+  -- listContainers _ = dockerError "cannot list containers"
   listContainers = ExceptT . Docker.listContainers
+  -- createContainer _ _ = dockerError "cannot create container"
   createContainer opts name = ExceptT $ Docker.createContainer opts name
+  -- startContainer _ cid = dockerError $ "cannot start container " <> Docker.fromContainerID cid
   startContainer opts cid = ExceptT $ Docker.startContainer opts cid
   stopContainer timeout cid = ExceptT $ Docker.stopContainer timeout cid
-  -- deleteContainer = const $ pure $ Left $ Docker.GenericDockerError "whoooopsie in createNetwork"
+  -- deleteContainer _ cid = dockerError $ "cannot delete container " <> Docker.fromContainerID cid
   deleteContainer opts cid = ExceptT $ Docker.deleteContainer opts cid
 
-  -- createNetwork = const $ ExceptT $ pure $ Left $ Docker.GenericDockerError "whoooopsie in createNetwork"
+  -- createNetwork _ = dockerError "cannot create network"
   createNetwork = ExceptT . Docker.createNetwork

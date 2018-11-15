@@ -69,8 +69,10 @@ runApp hexFile = do
   env         <- initialEnv hexFile
   httpHandler <- Docker.unixHttpHandler "/var/run/docker.sock"
   -- httpHandler <- Docker.defaultHttpHandler
-  result      <- runDockerT (Docker.defaultClientOpts, httpHandler)
-    $ runReaderT (runExceptT app) env
+  result      <-
+    runDockerT (Docker.defaultClientOpts, httpHandler)
+    $ flip runReaderT env
+    $ runExceptT app
   case result of
     Left  err -> logError $ show err
     Right _   -> logInfo "runApp is done"

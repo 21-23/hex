@@ -44,7 +44,8 @@ import           Control.Monad.Async                      ( MonadAsync
                                                           , wait
                                                           )
 import           Control.Monad.Docker                     ( MonadDocker
-                                                          , ignoreDockerError
+                                                          , DockerResult
+                                                          , dockerError
                                                           , listImages
                                                           , buildImageFromDockerfile
                                                           , pullImage
@@ -69,6 +70,7 @@ import           Control.Monad.WebSocket                  ( MonadWebSocket
 
 import qualified Network.HTTP.Types            as HTTP
 import qualified Docker.Client                 as Docker
+import           Docker.Client                            ( DockerError )
 
 
 import qualified HexFile
@@ -115,10 +117,8 @@ getServiceDefinitions = envServiceDefinitions <$> ask
 getMessengerDefinition :: (MonadReader Env m) => m ServiceDefinition
 getMessengerDefinition = envMessengerDefinition <$> ask
 
-
 -- | ensures network is created for all services defined
-ensureNetworking
-  :: (MonadReader Env m, MonadDocker m) => ExceptT Docker.DockerError m ()
+ensureNetworking :: (MonadReader Env m, MonadDocker m) => DockerResult m ()
 ensureNetworking =
   (getServiceDefinitions >>= mapM_ createNetworkWithName . allNetworkNames)
     `catchError` ignoreConflictError
@@ -129,7 +129,6 @@ ensureNetworking =
     | otherwise                     = throwError e
   ignoreConflictError e = throwError e
 
-  allNetworkNames :: Map ServiceName ServiceDefinition -> Set.Set Text
   allNetworkNames = Set.fromList . concatMap serviceNetworkNames . Map.elems
 
   serviceNetworkNames =
@@ -138,28 +137,14 @@ ensureNetworking =
       . Docker.networkingConfig
       . HexFile.createOptions
 
-  createNetworkWithName
-    -- :: (MonadDocker m) => Text -> m (Either Docker.DockerError Docker.NetworkID)
-    :: (MonadDocker m) => Text -> ExceptT Docker.DockerError m Docker.NetworkID
   createNetworkWithName name =
     createNetwork $ (Docker.defaultCreateNetworkOpts name)
       { Docker.createNetworkCheckDuplicate = True
       , Docker.createNetworkInternal       = False
       }
 
--- TODO: think about overriding monad instance for `m (Either DockerError a)` and
--- provide this as >>= implementation
--- andThen :: Monad m => m (Either e a) -> (a -> m (Either e b)) -> m (Either e b)
--- andThen mea fmeb = mea >>= either (return . Left) fmeb
-
--- listAllImages :: (MonadDocker m) => m (Either Docker.DockerError [Docker.Image])
-listAllImages :: (MonadDocker m) => ExceptT Docker.DockerError m [Docker.Image]
-listAllImages = listImages $ Docker.ListOpts True
-
 buildImage
-  :: (MonadLogger m, MonadDocker m)
-  => ServiceDefinition
-  -> ExceptT Docker.DockerError m ()
+  :: (MonadLogger m, MonadDocker m) => ServiceDefinition -> DockerResult m ()
 buildImage (ServiceDefinition _ imageName buildContext buildOptions _) =
   case buildContext of
     DockerFile path -> do
@@ -170,13 +155,10 @@ buildImage (ServiceDefinition _ imageName buildContext buildOptions _) =
       buildImageFromDockerfile buildOptions basePath
     Image _ -> do -- name and imageName seems to be the same thing
       logInfo $ "Pulling " <> show imageName <> "..."
-      void $ pullImage imageName "latest" -- skip docker logs
+      void $ pullImage imageName "latest" -- `void` to skip docker logs
 
 ensureBuiltImage
-  :: (MonadDocker m, MonadLogger m)
-  => ServiceDefinition
-  -- -> m (Either Docker.DockerError ())
-  -> ExceptT Docker.DockerError m ()
+  :: (MonadDocker m, MonadLogger m) => ServiceDefinition -> DockerResult m ()
 ensureBuiltImage service@(ServiceDefinition _ imageName _ _ _) =
   listAllImages >>= when imageNotFound (buildImage service)
  where
@@ -185,14 +167,46 @@ ensureBuiltImage service@(ServiceDefinition _ imageName _ _ _) =
   imageTag = imageName <> ":latest"
   when f a x = if f x then a else pure ()
 
--- TODO: ExceptT
+cleanupContainers :: (MonadDocker m) => ServiceDefinition -> DockerResult m ()
+cleanupContainers (ServiceDefinition _ imageName _ _ _) =
+  removeContainersByImage imageName
+
+createServiceContainer
+  :: (MonadDocker m) => ServiceDefinition -> DockerResult m Docker.ContainerID
+createServiceContainer (ServiceDefinition _ imageName _ _ createOptions) =
+  createContainer createOptions (Just imageName)
+
+startServiceContainer
+  :: (MonadDocker m) => Docker.ContainerID -> DockerResult m ()
+startServiceContainer = startContainer Docker.defaultStartOpts
+
+-- | prepares and starts service container
 runServiceContainer
-  :: (MonadDocker m, MonadLogger m)
-  => ServiceDefinition
-  -- -> m (Either Docker.DockerError ())
-  -> ExceptT Docker.DockerError m ()
-runServiceContainer s = do
-  ensureBuiltImage s
-  -- ensure image is built
-  -- create container
-  -- run container
+  :: (MonadDocker m, MonadLogger m) => ServiceDefinition -> DockerResult m ()
+runServiceContainer service = do
+  ensureBuiltImage service
+  cleanupContainers service
+  createServiceContainer service >>= startServiceContainer
+
+--
+-- utility
+--
+
+listAllImages :: (MonadDocker m) => DockerResult m [Docker.Image]
+listAllImages = listImages $ Docker.defaultListOpts { Docker.all = True }
+
+listAllContainers :: (MonadDocker m) => DockerResult m [Docker.Container]
+listAllContainers =
+  listContainers $ Docker.defaultListOpts { Docker.all = True }
+
+removeContainersByImage :: (MonadDocker m) => Text -> DockerResult m ()
+removeContainersByImage imageName =
+  filterBy imageName <$> listAllContainers >>= mapM_ stopAndRemove
+ where
+  filterBy image = List.filter $ (== image) . Docker.containerImageName
+  stopAndRemove = stopAndRemoveContainer . Docker.containerId
+
+stopAndRemoveContainer
+  :: (MonadDocker m) => Docker.ContainerID -> DockerResult m ()
+stopAndRemoveContainer =
+  deleteContainer Docker.defaultContainerDeleteOpts { Docker.force = True }
