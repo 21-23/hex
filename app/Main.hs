@@ -70,7 +70,7 @@ app stateVar hexFile shutdownHandler connection = do
               let serviceName        = Text.pack $ show serviceType
                   HexFile {services} = hexFile
               case Map.lookup serviceName services of
-                Nothing -> fail $ "Service " <> show serviceName <> " is not defined"
+                Nothing -> error $ "Service " <> show serviceName <> " is not defined"
                 Just serviceDefinition -> do
                   ensureBuiltImage serviceDefinition
                   ensureNetworking serviceDefinition
@@ -112,7 +112,7 @@ runServiceContainer stateVar (ServiceDefinition name imageName buildContext _ cr
   liftIO $ putStrLn $ "Creating " <> Text.unpack name <> "..."
   createResult <- Docker.createContainer createOptions Nothing
   case createResult of
-    Left err -> fail $ show err
+    Left err -> error $ show err
     Right containerId -> do
       state <- liftIO $ takeMVar stateVar
       liftIO $ putMVar stateVar $ State.addContainerId containerId state
@@ -136,7 +136,7 @@ ensureBuiltImage :: ServiceDefinition -> Docker.DockerT IO ()
 ensureBuiltImage (ServiceDefinition _ imageName buildContext buildOptions _) = do
   listResult <- Docker.listImages $ Docker.ListOpts True
   case listResult of
-    Left err -> fail $ show err
+    Left err -> error $ show err
     Right images -> do
       let findImage img = List.find (\DockerImage {Docker.imageRepoTags} ->
                                       (img <> ":latest") `elem` imageRepoTags) images
@@ -157,7 +157,7 @@ stopAndRemove :: ServiceDefinition -> Docker.DockerT IO ()
 stopAndRemove (ServiceDefinition _ name buildContext buildOptions _) = do
   listResult <- Docker.listContainers $ Docker.ListOpts True
   case listResult of
-    Left err -> fail $ show err
+    Left err -> error $ show err
     Right containers -> do
       let findContainer = List.find (\Docker.Container {Docker.containerNames} ->
                              ("/" <> name) `elem` containerNames) containers
@@ -233,7 +233,7 @@ main = do
       httpHandler <- dockerDefaultUnixHandler
       Docker.runDockerT (Docker.defaultClientOpts, httpHandler) $
         case Map.lookup messengerName services of
-          Nothing -> fail $ "Messenger service " <> show messengerName <> " is not defined"
+          Nothing -> error $ "Messenger service " <> show messengerName <> " is not defined"
           Just messengerDefinition@(ServiceDefinition name imageName buildContext buildOptions createOptions) -> do
             ensureBuiltImage messengerDefinition
             ensureNetworking messengerDefinition
@@ -245,7 +245,7 @@ main = do
                   ensureBuiltImage entryServiceDefinition
                   ensureNetworking entryServiceDefinition
                   runServiceContainer stateVar entryServiceDefinition
-                Nothing -> fail $ "Init sequence: service " <> show serviceName <> " is not defined"
+                Nothing -> error $ "Init sequence: service " <> show serviceName <> " is not defined"
             liftIO $ putStrLn "Init sequence complete!"
 
     Left err -> putStrLn $ "Error reading Hexfile: " <> show err
