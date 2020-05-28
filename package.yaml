@@ -61,3 +61,26 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - hex
+
+  hex-integration:
+    source-dirs:
+    - test/integration
+    - test/integration/lib
+    main:                 Spec.hs
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - base
+    - hex
+    - tasty
+    - tasty-hspec
+    - process
+    - typed-process
+    - directory
+    - temporary
+    - bytestring
+    - aeson
+    - text
+    - websockets
