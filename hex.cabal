@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9ab8eefed3230f333f483890722daa3c8a99535b55593bcb9e3a27d5dc3b7b01
+-- hash: 941191129ca9c43b2c8ccb580945467f7a3b53e9070d537c650bfcd4bbe6ebff
 
 name:           hex
 version:        0.1.0.0
@@ -24,6 +24,11 @@ extra-source-files:
 source-repository head
   type: git
   location: https://github.com/githubuser/hex
+
+flag integration-tests
+  description: Run integration tests
+  manual: False
+  default: False
 
 library
   exposed-modules:

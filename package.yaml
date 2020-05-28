@@ -84,3 +84,9 @@ tests:
     - aeson
     - text
     - websockets
+
+flags:
+  integration-tests:
+    description: Run integration tests
+    default: false
+    manual: false
