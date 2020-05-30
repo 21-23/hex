@@ -19,7 +19,7 @@ data State = State
   }
 
 data WebSocket
-  = NotConnected 
+  = NotConnected
   | Connected WebSocket.Connection
   | ConnectionClosed
 
@@ -31,13 +31,12 @@ addRequest request state@State{requestQueue} =
   state { requestQueue = requestQueue ++ [request] }
 
 fulfillRequest :: ServiceType -> State -> Maybe (ServiceRequest, State)
-fulfillRequest reqServiceType state@State{requestQueue} =
-  let (requests, fulfilled) = foldl (\(requests, fulfilled) request@ServiceRequest{serviceType} ->
-                                      if serviceType == reqServiceType
-                                        then (requests, Just request)
-                                        else (requests ++ [request], fulfilled))
-                                    ([], Nothing) requestQueue
-   in (\request -> (request, state { requestQueue = requests })) <$> fulfilled
+fulfillRequest reqServiceType state@State{requestQueue} = findAndSplice [] requestQueue
+  where
+    findAndSplice _ [] = Nothing
+    findAndSplice rs (request@ServiceRequest{serviceType} : rs')
+      | serviceType == reqServiceType = Just (request, state { requestQueue = rs <> rs' })
+      | otherwise                     = findAndSplice (rs <> [request]) rs'
 
 addContainerId :: Docker.ContainerID -> State -> State
 addContainerId containerId state@State{containerIds} =

@@ -16,9 +16,7 @@ import qualified Data.ByteString.Lazy.Char8    as L8
 import           Data.List                                ( isInfixOf )
 import           Control.Monad                            ( unless )
 import           Control.Exception                        ( handle, throw, SomeException)
-import qualified System.Process.Typed          as TypedProcess
-                                                          ( withProcess )
-import           System.Process.Typed              hiding ( withProcess )
+import           System.Process.Typed                     hiding ( withProcess )
 import           System.IO                                ( hGetContents
                                                           , hGetLine
                                                           , Handle
@@ -45,7 +43,7 @@ whileRunning = withProcess . const
 withProcess :: (HexProcess -> IO a) -> IO a
 withProcess f = do
   hexConfig <- config <$> getExe <*> getWorkingDir
-  TypedProcess.withProcess hexConfig $ \p ->
+  withProcessWait hexConfig $ \p ->
     handle
       (checkStderr p)
       (waitUntilHexIsStarted p *> f p <* stopIfNotStopped p)
